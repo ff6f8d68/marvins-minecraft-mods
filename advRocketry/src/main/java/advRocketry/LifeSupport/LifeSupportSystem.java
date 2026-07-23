@@ -122,6 +122,9 @@ public class LifeSupportSystem {
                 ServerLevel level = DimensionManager.getServerLevel(levelId);
                 if (level == null)
                     continue;
+                // Skip dimensions with no players — life support only matters when players are present
+                if (level.players().isEmpty())
+                    continue;
                 Set<Dimension.SurvivalProblem> problems = dim.getSurvivalProblems();
                 if (problems.isEmpty())
                     // this dimension is habitable, no problems

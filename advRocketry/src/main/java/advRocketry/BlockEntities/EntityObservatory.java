@@ -177,8 +177,13 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
                 // also make sure it displays known-by-default planets as known, so add them as unlocked planets
                 ItemStack stack = getStackInSlot(slot);
                 if (stack.getItem() instanceof ItemGalaxyDatabase && level != null) {
+                    Dimension myDim = DimensionManager.INSTANCE_SERVER.get(level.dimension().location());
                     for (Dimension dim : DimensionManager.INSTANCE_SERVER.dimensions.values()) {
                         if (dim instanceof PlanetDimension planetDimension) {
+                            // Stars are isKnown=true but we skip writing them to the disk here;
+                            // the observatory skips stars in discovery anyway, and they are
+                            // auto-unlocked on discovery via getNextPlanetToDiscover which now
+                            // skips stars entirely.
                             int maxData = ItemGalaxyDatabase.POINTS_UNLOCKED(planetDimension);
                             if (dim.getDimensionId().equals(level.dimension().location())) {
                                 // current dimension, distance is 100% unlocked
@@ -188,10 +193,9 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
                                 info.put(DataTypes.distance, maxData);
                                 ItemGalaxyDatabase.setPlanetInfo(stack, planetDimension, info);
                             }
-                            if (DimensionManager.INSTANCE_SERVER.get(level.dimension().location()) instanceof SpaceStationDimension spaceStationDimension) {
+                            if (myDim instanceof SpaceStationDimension spaceStationDimension) {
                                 // when on space station, always make the currently orbited planet known
                                 if (spaceStationDimension.isInOrbit() && Objects.equals(spaceStationDimension.getParentDimensionId(), dim.getDimensionId())) {
-                                    // we orbit around this planet, it is distance-known
                                     ItemGalaxyDatabase.PlanetInfo info = ItemGalaxyDatabase.getPlanetInfo(stack, planetDimension);
                                     if (info == null)
                                         info = new ItemGalaxyDatabase.PlanetInfo();
@@ -200,7 +204,7 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
                                 }
                             }
                             if (planetDimension.isKnown()) {
-                                // known by default, unlock all data
+                                // known by default, unlock all data (stars visible in sky)
                                 ItemGalaxyDatabase.PlanetInfo info = new ItemGalaxyDatabase.PlanetInfo();
                                 info.put(DataTypes.distance, maxData);
                                 info.put(DataTypes.mass, maxData);
@@ -390,21 +394,21 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
     }
 
     public boolean startAnalyzingRandomPlanet(ItemStack storageDisk) {
-        // find a random planet that is discovered but not unlocked
-        List<ResourceLocation> randomDimIds = new ArrayList<>(DimensionManager.INSTANCE_SERVER.dimensions.keySet());
-        Collections.shuffle(randomDimIds);
-        for (ResourceLocation dimId : randomDimIds) {
-            Dimension dim = DimensionManager.INSTANCE_SERVER.get(dimId);
-            if (dim instanceof PlanetDimension planetDimension && !planetDimension.isKnown()) {
-                // check if known
+        // find a random planet that is discovered but not unlocked (skip stars — they are always fully unlocked)
+        List<PlanetDimension> candidates = new ArrayList<>();
+        for (Dimension dim : DimensionManager.INSTANCE_SERVER.dimensions.values()) {
+            if (dim instanceof PlanetDimension planetDimension && !planetDimension.isStar()) {
                 if (ItemGalaxyDatabase.isDimensionKnown(storageDisk, planetDimension)) {
-                    // check if not unlocked
                     if (!ItemGalaxyDatabase.isDistanceUnlocked(storageDisk, planetDimension)) {
-                        toggleTask(Task.ANALYZE_PLANETS_AFTER_ALL_DISCOVERED, dimId);
-                        return true;
+                        candidates.add(planetDimension);
                     }
                 }
             }
+        }
+        if (!candidates.isEmpty()) {
+            Collections.shuffle(candidates);
+            toggleTask(Task.ANALYZE_PLANETS_AFTER_ALL_DISCOVERED, candidates.get(0).getDimensionId());
+            return true;
         }
         return false;
     }
@@ -424,35 +428,24 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
     }
 
     public PlanetDimension getNextPlanetToDiscover(ItemStack storageDisk) {
-        List<PlanetDimension> discoverablePlanets = new ArrayList<>();
+        // Collect undiscovered planets AND stars
+        PlanetDimension bestCandidate = null;
+        double bestVisibility = -1;
 
-        // 1. Collect all valid, undiscovered planet dimensions
-        for (ResourceLocation dimId : DimensionManager.INSTANCE_SERVER.dimensions.keySet()) {
-            Dimension dim = DimensionManager.INSTANCE_SERVER.get(dimId);
-
+        for (Dimension dim : DimensionManager.INSTANCE_SERVER.dimensions.values()) {
             if (dim instanceof PlanetDimension planetDimension) {
-                // Only consider planets not already on the disk
-                if (!ItemGalaxyDatabase.isDimensionKnown(storageDisk, planetDimension)) {
-                    discoverablePlanets.add(planetDimension);
+                if (ItemGalaxyDatabase.isDimensionKnown(storageDisk, planetDimension)) continue;
+
+                double vis = calculateVisibility(planetDimension);
+                if (vis > bestVisibility) {
+                    bestVisibility = vis;
+                    bestCandidate = planetDimension;
                 }
             }
         }
 
-        // If there's nothing left to find, we're done
-        if (discoverablePlanets.isEmpty()) {
-            return null;
-        }
-
-        // 2. Sort planets by visibility in descending order (highest visibility first)
-        discoverablePlanets.sort((p1, p2) -> Double.compare(calculateVisibility(p2), calculateVisibility(p1)));
-
-        // TODO: artifact check, is artifact required and supplied in input hatch?
-
-        // 3. Return the most visible planet
-        //    check visibility again, for example in nether we might not be able to see into the galaxy when the current dim is not in dimension manager
-        PlanetDimension toDiscover = discoverablePlanets.get(0);
-        if(calculateVisibility(toDiscover) > 0)
-            return toDiscover;
+        if (bestCandidate != null && bestVisibility > 0)
+            return bestCandidate;
         return null;
     }
 
@@ -672,28 +665,22 @@ public class EntityObservatory extends EntityMultiblockMachineMasterWithData {
                             double p = Math.random();
                             double pTarget = Config.INSTANCE.observatory_Find_Planet_P_Per_Tick;
                             if (p < pTarget) {
-                                // discover a new random planet that is not already known
+                                // discover a new planet (stars are skipped — isKnown=true)
                                 PlanetDimension nextToDiscover = getNextPlanetToDiscover(storageDisk);
                                 if (nextToDiscover != null) {
-                                    // add the planet to the list
                                     ItemGalaxyDatabase.discoverPlanet(storageDisk, nextToDiscover);
-                                    // send a message to nearby players
                                     for (Player player : level.players()) {
                                         if (player.position().distanceTo(getBlockPos().getCenter()) < 32) {
-                                            String n = nextToDiscover.isStar() ? "star" : "planet";
                                             String parentNameString = "";
                                             if (DimensionManager.INSTANCE_SERVER.get(nextToDiscover.getParentDimensionId()) instanceof PlanetDimension parentPlanet) {
                                                 parentNameString = " in orbit around " + parentPlanet.getName();
                                             }
-                                            player.sendSystemMessage(Component.literal("A nearby Observatory discovered a new " + n + parentNameString + ": " + nextToDiscover.getName()));
+                                            player.sendSystemMessage(Component.literal("A nearby Observatory discovered a new planet" + parentNameString + ": " + nextToDiscover.getName()));
                                         }
                                     }
-                                }
-                                // check if there are still any planets left that can be discovered
-                                if (getNextPlanetToDiscover(storageDisk) != null) {
-                                    // just continue the work
+                                    // still undiscovered planets left, continue scanning
                                 } else {
-                                    // start analyzing random planets if everything is discovered
+                                    // everything discovered, start analyzing or go idle
                                     analyzeRandomPlanetOrTurnOff(storageDisk);
                                 }
                             }

@@ -41,6 +41,7 @@ public class Blocks {
 
     // other special blocks
     public static final Supplier<Block> SOLAR_PANEL = BLOCKS.register("solar_panel", () -> new SolarPanel());
+    public static final Supplier<Block> CREATIVE_ENERGY = BLOCKS.register("creative_energy", () -> new CreativeEnergyBlock());
     public static final Supplier<Block> DATA_STORAGE_BLOCK = BLOCKS.register("data_storage_block", () -> new DataStorageBlock());
     public static final Supplier<Block> OXYGEN_VENT = BLOCKS.register("oxygen_vent", () -> new OxygenVent());
     public static final Supplier<Block> OBSERVATORY = BLOCKS.register("observatory", () -> new Observatory());
@@ -49,6 +50,7 @@ public class Blocks {
     public static final Supplier<Block> FLUID_RELEASE = BLOCKS.register("fluid_release", () -> new FluidRelease());
     public static final Supplier<Block> PRESSURE_TANK = BLOCKS.register("pressure_tank", () -> new PressureTank());
     public static final Supplier<Block> SUIT_WORKSTATION = BLOCKS.register("suit_workstation", () -> new SuitWorkstation());
+    public static final Supplier<Block> PLANET_AUTO_DISCOVERER = BLOCKS.register("planet_auto_discoverer", () -> new PlanetAutoDiscoverer());
 
     // basic blocks
     public static final Supplier<Block> MOON_TURF_DARK = BLOCKS.register("moon_turf_dark", () -> new Block(BlockBehaviour.Properties.of().strength(0.5f).requiresCorrectToolForDrops()));

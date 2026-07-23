@@ -90,6 +90,7 @@ public class Main {
         GeneralRegistry.ATTACHMENT_TYPES.register(modEventBus);
         GeneralRegistry.ARMOR_MATERIALS.register(modEventBus);
         GeneralRegistry.COMPONENTS.register(modEventBus);
+        ModSounds.SOUNDS.register(modEventBus);
 
         // register network packets
         SimpleNetworkPacket.registerReceiver(DimensionManager.packetDimensionPropertiesSync, new DimensionManager.SyncDimensionProperties());
@@ -131,6 +132,7 @@ public class Main {
         //e.registerBlockEntity(Capabilities.FluidHandler.BLOCK, Registry.ENTITY_OXYGEN_VENT.get(), (x, y) -> x.);
         //e.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, Registry.ENTITY_OXYGEN_VENT.get(), (x, y) -> x.battery);
         e.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, BlockEntities.ENTITY_SOLAR_PANEL.get(), (x, y) -> x.battery);
+        e.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, BlockEntities.ENTITY_CREATIVE_ENERGY_BLOCK.get(), (x, y) -> x.battery);
         e.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, BlockEntities.ENTITY_SATELLITE_MONITOR.get(), (x, y) -> x.battery);
         e.registerBlockEntity(Capabilities.FluidHandler.BLOCK, BlockEntities.ENTITY_FLUID_RELEASE.get(), (x, y) -> y == x.getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING) ? null : x.tank);
         e.registerBlockEntity(Capabilities.FluidHandler.BLOCK, BlockEntities.ENTITY_PRESSURE_TANK.get(), (x, y) -> x.tank);
@@ -224,6 +226,7 @@ public class Main {
 
             e.accept(Blocks.DATA_STORAGE_BLOCK.get());
             e.accept(Blocks.SOLAR_PANEL.get());
+            e.accept(Blocks.CREATIVE_ENERGY.get());
             e.accept(Blocks.OBSERVATORY.get());
             e.accept(Blocks.ASTROBODY_DATA_PROCESSOR.get());
             e.accept(Blocks.OXYGEN_VENT.get());
@@ -231,6 +234,7 @@ public class Main {
             e.accept(Blocks.FLUID_RELEASE.get());
             e.accept(Blocks.PRESSURE_TANK.get());
             e.accept(Blocks.SUIT_WORKSTATION.get());
+            e.accept(Blocks.PLANET_AUTO_DISCOVERER.get());
 
             e.accept(Blocks.MOON_TURF.get());
             e.accept(Blocks.MOON_TURF_DARK.get());
@@ -258,6 +262,7 @@ public class Main {
             e.accept(Items.ITEM_SATELLITE_ID_CHIP.get());
             e.accept(Items.ITEM_SATELLITE_BIOME_CHANGER.get());
             e.accept(Items.ITEM_SATELLITE_BIOME_CHANGER_REMOTE.get());
+            e.accept(Items.ITEM_SYSTEM_ID_CHIP.get());
             e.accept(Items.ITEM_LORA_MODULE.get());
             e.accept(Items.ITEM_RADIATION_SHIELD.get());
             e.accept(Items.ITEM_BATTERY.get());

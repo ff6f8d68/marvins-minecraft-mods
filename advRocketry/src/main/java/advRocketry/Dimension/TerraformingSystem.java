@@ -340,6 +340,7 @@ public class TerraformingSystem {
         Map<Block, Double> decorations = getDecoration(biomeId);
         ArrayList<Block> shuffled = new ArrayList<>(decorations.keySet());
         Collections.shuffle(shuffled);
+        WaterCompositionTracker.setIgnoreNextCompositionChange();
         for (Block block : shuffled) {
             double p = decorations.get(block);
             if (Math.random() < p) {
@@ -354,6 +355,7 @@ public class TerraformingSystem {
     }
 
     public static void maybeUpdateBlocksForNewBiome(ServerLevel level, int x, int z) {
+        WaterCompositionTracker.setIgnoreNextCompositionChange();
         // biomes are 3d now but we sample the one at the surface for all the math
         BlockPos pos = new BlockPos(x, 0, z);
         ResourceLocation currentBiomeId = getCurrentSurfaceBiome(level, x, z);

@@ -63,7 +63,7 @@ public class DefaultGalaxy {
         moon.currentTemp = 260;
         moon.texture = ResourceLocation.fromNamespaceAndPath("adv_rocketry", "textures/planet/baked_moon.png");
         moon.skyColor = SKY_COLOR_OVERWORLD();
-        moon.hasRingSystem = true;
+        moon.hasRingSystem = false;
         moon.biomePreset = MOON.name;
         galaxy.add(moon);
 

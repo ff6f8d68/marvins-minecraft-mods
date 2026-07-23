@@ -55,8 +55,15 @@ public class NavigateToSpaceTravelDimension {
             }
         }
 
+        // Lazily create the space travel dimension if needed
+        Dimension travelDim = DimensionManager.INSTANCE_SERVER.get(RocketTravelDimension.dimId);
+        if (travelDim != null) {
+            travelDim.ensureDimensionCreated();
+        }
+
         // get the teleportation target
         ServerLevel target = DimensionManager.getServerLevel(RocketTravelDimension.dimId);
+        if (target == null) return;
         ChunkPos targetPos = RocketTravelDimension.getNextFreeChunkPos();
         BlockPos targetBlockPos = targetPos.getMiddleBlockPosition(100);
 

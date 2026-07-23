@@ -66,6 +66,8 @@ public class PlanetDimensionProperties extends DimensionProperties {
     public Vector3f emissiveLightColor = new Vector3f(0, 0, 0); // the color that the planet radiates with to shade other planets
     public boolean hasRingSystem = false;
 
+    public int textureSeed = 0; // seed for procedural texture generation (used by ProceduralPlanetTextureGenerator)
+
     public float dayTime; // do not set yourself
     public double currentTemp = 300; // do set yourself to have a starting value
 

@@ -8,6 +8,7 @@ import advRocketry.API;
 import advRocketry.Dimension.Dimension;
 import advRocketry.Dimension.DimensionManager;
 import advRocketry.Dimension.PlanetDimension;
+import advRocketry.Dimension.WaterCompositionTracker;
 import advRocketry.GlobalTime;
 import advRocketry.Registry.GasRegistry;
 import advRocketry.Render.Particles.RocketParticle;
@@ -166,6 +167,7 @@ public class EntityFluidRelease extends BlockEntity implements ARLib.network.INe
                 else {
                     if (!inFrontState.getBlock().equals(Blocks.WATER)) {
                         if (accumulatedWaterBeforePlace > 1000) {
+                            WaterCompositionTracker.setIgnoreNextCompositionChange();
                             level.setBlock(inFrontPos, Blocks.WATER.defaultBlockState(), 3);
                             accumulatedWaterBeforePlace = 0;
                         } else {
@@ -177,6 +179,7 @@ public class EntityFluidRelease extends BlockEntity implements ARLib.network.INe
             // remove water in front of me again (composition tracker ignores this class)
             if (lastReleasedFluid.equals(Fluids.WATER) && !fluidStack.getFluid().equals(Fluids.WATER)) {
                 if (inFrontState.getBlock().equals(Blocks.WATER) && inFrontState.getFluidState().isSource()) {
+                    WaterCompositionTracker.setIgnoreNextCompositionChange();
                     level.setBlock(inFrontPos, Blocks.AIR.defaultBlockState(), 3);
                     // since we removed the water, we can instantly place it again next tick and no need to wait
                     accumulatedWaterBeforePlace = 1000;

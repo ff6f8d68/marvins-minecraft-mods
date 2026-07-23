@@ -42,6 +42,7 @@ public class DimensionEvents {
             // boil away water blocks when too hot
             // the other custom liquids / dry ice have random tick, water has not
             if (randomBlockState.getBlock().equals(Blocks.WATER) && temp > 1 + GasRegistry.gases.get(GasRegistry.water).getBoilingTemp(pressure)) {
+                WaterCompositionTracker.setIgnoreNextCompositionChange();
                 level.setBlock(randomPos, Blocks.AIR.defaultBlockState(), 3);
                 randomBlockState = level.getBlockState(randomPos);
             }

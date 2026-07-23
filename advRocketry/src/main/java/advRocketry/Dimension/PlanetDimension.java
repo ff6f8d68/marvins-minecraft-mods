@@ -46,6 +46,8 @@ public class PlanetDimension extends Dimension {
         if (FMLEnvironment.dist.isClient()) {
             // i can not do it in this class because it would load abstract texture to server and it crashes
             // by wrapping it in another class it will not trigger server crash unless the class is loaded
+            // Procedural textures are skipped here — they must be generated on the render thread
+            // (SkyRenderer.renderPlanet handles them safely)
             SkyRenderer.ensureMipmapTexture(getTexture());
         }
     }
@@ -580,11 +582,23 @@ public class PlanetDimension extends Dimension {
     }
 
     public void tick() {
-        super.tickStarCache();
-
+        // Always tick position — needed for space map rendering and orbital calculations
         tickPosition();
 
         if (!isClientSide) {
+            // Skip expensive operations if no player has visited this dimension yet.
+            // Temperature, gas, star cache, and sync only matter when chunks are loaded.
+            boolean hasLevel = DimensionManager.hasServerLevel(getDimensionId());
+
+            if (hasLevel) {
+                super.tickStarCache();
+            } else {
+                // Only update star cache occasionally (every ~10 seconds) for unvisited dimensions
+                // so the space map still shows correct lighting
+                if (GlobalTime.getGlobalTime() % 200 == 0) {
+                    super.tickStarCache();
+                }
+            }
 
             if (GlobalTime.getGlobalTime() % 20 == 0 && requiresSync) {
                 requiresSync = false;
@@ -592,42 +606,43 @@ public class PlanetDimension extends Dimension {
                 dimensionManager.syncDimensionProperties(this);
             }
 
-            ServerLevel level = DimensionManager.getServerLevel(getDimensionId());
-            if (level != null) {
-                if (properties().targetDayLength > 0) { // time runs normal, when <= 0 it is fixed time
-                    level.setDayTimePerTick(getDayTimePerTick());
-                    properties().dayTime = level.dayTime();
-                } else
-                    properties().dayTime = -properties().targetDayLength;
+            if (hasLevel) {
+                ServerLevel level = DimensionManager.getServerLevel(getDimensionId());
+                if (level != null) {
+                    if (properties().targetDayLength > 0) { // time runs normal, when <= 0 it is fixed time
+                        level.setDayTimePerTick(getDayTimePerTick());
+                        properties().dayTime = level.dayTime();
+                    } else
+                        properties().dayTime = -properties().targetDayLength;
+
+                    if (computeCloudValue() < 0.1) {
+                        // can not rain / snow without clouds
+                        setClearWeather();
+                    }
+
+                    tickTemperature();
+                    tickGasProperties();
+                    PlanetEvents.tick(this, properties(), level);
+                } else {
+                    trackDayTimeNormal();
+                }
             } else {
                 trackDayTimeNormal();
-            }
-
-            if (level != null) {
-                if (computeCloudValue() < 0.1) {
-                    // can not rain / snow without clouds
-                    setClearWeather();
-                }
-            }
-
-
-            tickTemperature();
-
-            tickGasProperties();
-
-            if (level != null) {
-                PlanetEvents.tick(this, properties(), level);
             }
         }
 
         if (isClientSide) {
             Dimension myDimension = ClientUtils.getPlayerDimension();
             if (myDimension != null && myDimension.getDimensionId().equals(this.getDimensionId())) {
+                // Only do full star cache + heavy tick for the dimension the player is in
+                super.tickStarCache();
                 if (properties().targetDayLength > 0)
                     properties().dayTime = ClientUtils.getPlayerLevel().dayTime();
                 else
                     properties().dayTime = -properties().targetDayLength;
             } else {
+                // For distant dimensions on client, just update position (already done above)
+                // and interpolate day time for rotation — skip star cache (done infrequently above)
                 trackDayTimeNormal();
             }
         }

@@ -50,6 +50,11 @@ public class ProgramNavigateToSpaceStation implements RocketProgram {
         this.targetDimensionId = targetDimensionId;
         this.originDimensionId = rocket.level().dimension().location();
 
+        // Lazily create the target station dimension if needed
+        Dimension targetDim = DimensionManager.INSTANCE_SERVER.get(targetDimensionId);
+        if (targetDim != null) {
+            targetDim.ensureDimensionCreated();
+        }
 
         ServerLevel targetLevel = DimensionManager.getServerLevel(targetDimensionId);
         targetLevel.getChunk(target); // should load the chunk

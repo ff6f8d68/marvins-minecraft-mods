@@ -2,6 +2,7 @@ package advRocketry.mixins;
 
 import advRocketry.Dimension.DimensionManager;
 import advRocketry.Dimension.PlanetDimension;
+import advRocketry.Dimension.WaterCompositionTracker;
 import advRocketry.LifeSupport.LifeSupportSystem;
 import advRocketry.Registry.GasRegistry;
 import net.minecraft.core.BlockPos;
@@ -47,6 +48,7 @@ public abstract class IceBlockMixin {
 
             if (temp > waterGas.getBoilingTemp(pressure)) {
                 // too hot for any ice
+                WaterCompositionTracker.setIgnoreNextCompositionChange();
                 if (pos.getY() > planet.getGasProperty(GasRegistry.water).worldGenSeaLevel)
                     // melt into air because it is above sea level
                     // if it would melt into water, the position was probably already worked by the sea level adjustment

@@ -215,8 +215,15 @@ public class ProgramNavigateToPlanetPosition implements RocketProgram {
     public void teleportToPlanet(EntityRocket rocket) {
         if (rocket.level().isClientSide) return;
 
+        // Lazily create the target dimension's ServerLevel before teleporting
+        Dimension targetDim = DimensionManager.INSTANCE_SERVER.get(targetDimensionId);
+        if (targetDim != null) {
+            targetDim.ensureDimensionCreated();
+        }
+
         // get the teleportation target
         ServerLevel targetLevel = DimensionManager.getServerLevel(targetDimensionId);
+        if (targetLevel == null) return;
         Vec3 targetPos = new Vec3(target.getX(), Config.INSTANCE.planet_Sky_Height, target.getZ());
 
         Vec3 entrySpeed = new Vec3(

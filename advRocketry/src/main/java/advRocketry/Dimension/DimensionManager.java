@@ -1,6 +1,7 @@
 package advRocketry.Dimension;
 
 import ARLib.network.SimpleNetworkPacket;
+import advRocketry.Config;
 import advRocketry.Main;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -33,6 +34,10 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
 
     public final HashMap<ResourceLocation, Dimension> dimensions = new HashMap<>();
 
+    // Incremented whenever dimensions are added or removed, so StarCache can detect changes
+    // without re-copying the values list every tick.
+    public int dimensionsVersion = 0;
+
     public boolean isClientSide;
 
     public DimensionManager(boolean isClientSide) {
@@ -47,6 +52,14 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
     public static ServerLevel getServerLevel(ResourceLocation dimensionId) {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         return server.getLevel(ResourceKey.create(Registries.DIMENSION, dimensionId));
+    }
+
+    /// Check if a dimension currently has a loaded ServerLevel on the server.
+    /// Used to skip expensive tick operations for dimensions no player has visited yet.
+    public static boolean hasServerLevel(ResourceLocation dimensionId) {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return false;
+        return server.getLevel(ResourceKey.create(Registries.DIMENSION, dimensionId)) != null;
     }
 
     public Dimension get(ResourceLocation key) {
@@ -65,6 +78,7 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
 
     public void addDimension(Dimension dimension) {
         dimensions.put(dimension.getDimensionId(), dimension);
+        dimensionsVersion++;
         syncDimensionProperties(dimension);
     }
 
@@ -146,13 +160,16 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
         // save dimensions
         System.out.println("[DimensionManager] unloading and saving dimensions...");
         for (Dimension i : dimensions.values()) {
-            DynamicDimensionRegistry.from(ServerLifecycleHooks.getCurrentServer()).unloadDynamicDimension(i.getDimensionId(), (x, y) -> {
-            });
+            if (i.dimensionCreated) {
+                DynamicDimensionRegistry.from(ServerLifecycleHooks.getCurrentServer()).unloadDynamicDimension(i.getDimensionId(), (x, y) -> {
+                });
+            }
         }
         System.out.println("[DimensionManager] saved all dimensions!");
 
         // make sure to release everything to gc and clear for the next run
         dimensions.clear();
+        dimensionsVersion++;
     }
 
     private DimensionProperties createPropertiesFromString(String dimensionProperties) {
@@ -178,6 +195,7 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
             } else {
                 PlanetDimension dimension = new PlanetDimension(properties, this);
                 dimensions.put(dimension.getDimensionId(), dimension);
+                dimensionsVersion++;
                 System.out.println("[DimensionManager] created PlanetDimension for " + dimension.getDimensionId());
             }
         } else if (properties.type == DimensionProperties.DimensionType.DUMMY) {
@@ -186,6 +204,7 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
             } else {
                 DummyDimension dummyDimension = new DummyDimension(properties, this);
                 dimensions.put(dummyDimension.getDimensionId(), dummyDimension);
+                dimensionsVersion++;
                 System.out.println("[DimensionManager] created DummyDimension for " + dummyDimension.getDimensionId());
             }
         } else if (properties.type == DimensionProperties.DimensionType.SPACE_STATION) {
@@ -194,6 +213,7 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
             } else {
                 SpaceStationDimension spaceStationDimension = new SpaceStationDimension(properties, this);
                 dimensions.put(spaceStationDimension.getDimensionId(), spaceStationDimension);
+                dimensionsVersion++;
                 System.out.println("[DimensionManager] created Space Station for " + spaceStationDimension.getDimensionId() + ":" + spaceStationDimension.getName());
             }
         } else if (properties.type == DimensionProperties.DimensionType.ROCKET_TRAVEL) {
@@ -202,6 +222,7 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
             } else {
                 RocketTravelDimension rocketTravelDimension = new RocketTravelDimension(properties, this);
                 dimensions.put(rocketTravelDimension.getDimensionId(), rocketTravelDimension);
+                dimensionsVersion++;
                 System.out.println("[DimensionManager] created " + rocketTravelDimension.getDimensionId() + ":" + rocketTravelDimension.getName());
             }
         }
@@ -249,6 +270,15 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
         for (String s : defaultGalaxy) {
             properties.add(createPropertiesFromString(s));
         }
+
+        // Load NASA exoplanet + Gaia star data if enabled
+        if (Config.INSTANCE.enable_Nasa_Universe) {
+            int maxStars = Config.INSTANCE.nasa_Universe_Max_Stars;
+            List<DimensionProperties> nasaProperties = NasaUniverseLoader.loadUniverse(maxStars);
+            properties.addAll(nasaProperties);
+            System.out.println("[DimensionManager] Added " + nasaProperties.size() + " NASA universe bodies to default galaxy.");
+        }
+
         saveDimensionProperties(defaultDir, properties);
     }
 
@@ -299,28 +329,47 @@ public class DimensionManager implements SimpleNetworkPacket.SimpleNetworkDataRe
 
     public static class SyncDimensionList implements SimpleNetworkPacket.SimpleNetworkDataReceiver {
 
-        public static void syncDimensionListToPlayer(ServerPlayer player) {
-            DimensionList list = new DimensionList(new ArrayList<>(INSTANCE_SERVER.dimensions.keySet()));
-            String s = new Gson().toJson(list);
-            PacketDistributor.sendToPlayer(player, new SimpleNetworkPacket(packetDimensionListSync, s));
-        }
+        // max ResourceLocations per packet to stay under the 32K string limit
+        private static final int CHUNK_SIZE = 500;
 
-        public void readClient(String dimensionList) {
-            DimensionList list = new Gson().fromJson(dimensionList, DimensionList.class);
-            HashSet<ResourceLocation> set = new HashSet<>(list.dimensionIds);
-            for (ResourceLocation i : new ArrayList<>(INSTANCE_CLIENT.dimensions.keySet())) {
-                if (!set.contains(i)) {
-                    INSTANCE_CLIENT.dimensions.remove(i);
-                    System.out.println("client removed dimension: " + i);
-                }
+        // accumulated IDs on client side while receiving chunks
+        private static final ArrayList<ResourceLocation> pendingIds = new ArrayList<>();
+
+        public static void syncDimensionListToPlayer(ServerPlayer player) {
+            ArrayList<ResourceLocation> allIds = new ArrayList<>(INSTANCE_SERVER.dimensions.keySet());
+            int total = allIds.size();
+            for (int offset = 0; offset < total; offset += CHUNK_SIZE) {
+                List<ResourceLocation> chunk = allIds.subList(offset, Math.min(offset + CHUNK_SIZE, total));
+                boolean isLast = (offset + CHUNK_SIZE >= total);
+                DimensionListChunk chunkObj = new DimensionListChunk(new ArrayList<>(chunk), isLast);
+                String s = new Gson().toJson(chunkObj);
+                PacketDistributor.sendToPlayer(player, new SimpleNetworkPacket(packetDimensionListSync, s));
             }
         }
 
-        static class DimensionList { // wrapped for gson to parse so it has the type of the list
-            ArrayList<ResourceLocation> dimensionIds;
+        public void readClient(String dimensionListJson) {
+            DimensionListChunk chunk = new Gson().fromJson(dimensionListJson, DimensionListChunk.class);
+            pendingIds.addAll(chunk.dimensionIds);
 
-            public DimensionList(ArrayList<ResourceLocation> dimensionIds) {
+            if (chunk.isLast) {
+                HashSet<ResourceLocation> set = new HashSet<>(pendingIds);
+                for (ResourceLocation i : new ArrayList<>(INSTANCE_CLIENT.dimensions.keySet())) {
+                    if (!set.contains(i)) {
+                        INSTANCE_CLIENT.dimensions.remove(i);
+                        INSTANCE_CLIENT.dimensionsVersion++;
+                    }
+                }
+                pendingIds.clear();
+            }
+        }
+
+        static class DimensionListChunk {
+            ArrayList<ResourceLocation> dimensionIds;
+            boolean isLast;
+
+            public DimensionListChunk(ArrayList<ResourceLocation> dimensionIds, boolean isLast) {
                 this.dimensionIds = dimensionIds;
+                this.isLast = isLast;
             }
         }
     }

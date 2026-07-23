@@ -1,0 +1,12 @@
+{
+  "parent": "block/cube",
+  "textures": {
+    "down": "arlib:block/machinegeneric2",
+    "up": "adv_rocketry:block/monitor",
+    "north": "adv_rocketry:block/planet_auto_discoverer",
+    "south": "arlib:block/machinegeneric2",
+    "west": "arlib:block/machinegeneric2",
+    "east": "arlib:block/machinegeneric2",
+    "particle": "adv_rocketry:block/planet_auto_discoverer"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "adv_rocketry:ui.open": {
+    "sounds": [
+      "adv_rocketry:ui/scifi/open"
+    ]
+  },
+  "adv_rocketry:ui.close": {
+    "sounds": [
+      "adv_rocketry:ui/scifi/close"
+    ]
+  },
+  "adv_rocketry:ui.click": {
+    "sounds": [
+      "adv_rocketry:ui/scifi/click"
+    ]
+  },
+  "adv_rocketry:ui.hover": {
+    "sounds": [
+      "adv_rocketry:ui/scifi/hover"
+    ]
+  }
+}

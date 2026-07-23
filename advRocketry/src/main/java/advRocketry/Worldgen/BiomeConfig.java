@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import static advRocketry.Utils.Utils.getBiomeHolder;
 
@@ -65,7 +66,19 @@ public class BiomeConfig {
     }
 
     public static BiomeConfig loadPreset(String presetName) {
-        return BiomeConfig.fromConfig(Path.of(Main.myConfigDir.toString(), PRESET_DIRECTORY, presetName));
+        if (presetName == null || presetName.isEmpty()) {
+            throw new RuntimeException("Biome preset name is null or empty");
+        }
+        // Normalize: lowercase and ensure .json extension
+        String fileName = presetName.toLowerCase(Locale.ROOT);
+        if (!fileName.endsWith(".json")) {
+            fileName = fileName + ".json";
+        }
+        Path presetPath = Path.of(Main.myConfigDir.toString(), PRESET_DIRECTORY, fileName);
+        if (!Files.exists(presetPath)) {
+            throw new RuntimeException("Biome preset file not found: " + presetPath);
+        }
+        return BiomeConfig.fromConfig(presetPath);
     }
 
     public static void makePresetIfNotExist(String presetName, BiomeConfig biomeConfig) {

@@ -5,6 +5,7 @@
   "mixins": [
     "AbstractArrowMixin",
     "FallingBlockEntityMixin",
+    "FlowingFluidMixin",
     "ItemEntityMixin",
     "LivingEntityMixin",
     "ServerLevelMixin",

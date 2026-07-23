@@ -33,7 +33,7 @@ public class SpaceDimensionGeneration {
                 false,
                 -64,
                 384,
-                384,
+                0, // seaLevel=0: no water in space dimensions (stations + rocket travel)
                 BlockTags.INFINIBURN_OVERWORLD, // infiniburn
                 ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
                 1f, // ambientLight

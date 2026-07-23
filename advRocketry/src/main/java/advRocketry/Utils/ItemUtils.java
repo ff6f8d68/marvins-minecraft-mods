@@ -7,12 +7,14 @@ import net.minecraft.world.item.component.CustomData;
 
 public class ItemUtils {
     public static CompoundTag getStacktagOrEmpty(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return new CompoundTag();
         if (stack.has(DataComponents.CUSTOM_DATA))
             return stack.get(DataComponents.CUSTOM_DATA).copyTag();
         return new CompoundTag();
     }
 
     public static CompoundTag getStacktagOrEmptyUnsafe(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return new CompoundTag();
         if (stack.has(DataComponents.CUSTOM_DATA))
             return stack.get(DataComponents.CUSTOM_DATA).getUnsafe();
         return new CompoundTag();

@@ -7,105 +7,71 @@ in vec3 Normal;
 out vec4 vColor;
 out vec3 localUpUniverseSpace;
 out vec3 viewDir;
+out vec2 uv;
 
 uniform mat4 ViewMat;
 uniform mat4 ModelMat;
 uniform mat4 WorldMat;
 uniform mat4 ProjMat;
 
-uniform vec3 WarpMovement; // The velocity vector of your travel
+uniform vec3 WarpMovement;
 uniform ivec2 ScreenSize;
 
 void main() {
     float BoxSize = 50000;
-    float scale = 5;
-    float warpScale = 0.5;
+    float scale = 1.0;
 
-    // 1. Get the star's static center
     vec3 staticCenter = Position - (Normal * scale);
-
-    // 2. Move into Camera Relative Space
     vec3 relativeCenter = (ModelMat * vec4(staticCenter, 1.0)).xyz;
 
-    // 3. Warp the center (Wrap-around logic)
-    vec3 wrappedCenter = mod(relativeCenter + (BoxSize * 0.5), BoxSize) - (BoxSize * 0.5);
+    // Spherical wrapping: wrap distance from camera, not per-axis
+    float distFromCamera = length(relativeCenter);
+    vec3 wrappedCenter;
+    if (distFromCamera > BoxSize * 0.5) {
+        vec3 dir = relativeCenter / distFromCamera;
+        float wrappedDist = mod(distFromCamera, BoxSize * 0.5);
+        wrappedCenter = dir * wrappedDist;
+    } else {
+        wrappedCenter = relativeCenter;
+    }
 
     float distToCamera = length(wrappedCenter);
 
-    // 4. Calculate Stretch
+    // Billboard: orient quad to face camera
+    vec3 camRight = normalize(vec3(ViewMat[0][0], ViewMat[1][0], ViewMat[2][0]));
+    vec3 camUp = normalize(vec3(ViewMat[0][1], ViewMat[1][1], ViewMat[2][1]));
+
+    // Size scales with distance so stars remain visible, with a minimum pixel size
+    float screenSizeY = float(ScreenSize.y);
+    float desiredPixelSize = 2.0;
+    float distFactor = distToCamera / (ProjMat[1][1] * screenSizeY / desiredPixelSize);
+    float starSize = max(scale, distFactor * 0.5);
+
+    vec3 offset = camRight * Normal.x * starSize + camUp * Normal.y * starSize;
+
+    // Warp stretch
     vec3 stretchOffset = vec3(0.0);
     float speed = length(WarpMovement);
-
     if (speed > 0.001) {
-        // Normalize
         vec3 dir = WarpMovement / speed;
-        // Determine how much this specific corner points toward the movement
-        float alignment = dot(Normal, dir);
-
-        // We stretch the vertex along the WarpMovement vector.
-        // Vertices in "front" go forward, vertices in "back" stay put or move less.
-        // This turns the cube into a long line/needle.
-        stretchOffset = WarpMovement * alignment * warpScale;
+        float alignment = dot(normalize(wrappedCenter), dir);
+        stretchOffset = WarpMovement * alignment * 0.3;
     }
 
-    // 5. Final Position: Wrapped Center + Original Cube Shape + Warp Stretch
-    vec3 finalPos = wrappedCenter + (Normal * scale) + stretchOffset;
-
-
-    // --- 6. Anti-Flicker (Minimum Size) Logic ---
-
-    // Get the position in clip space to find out how big it is on screen
-    vec4 clipPos = ProjMat * ViewMat * WorldMat * vec4(finalPos, 1.0);
-
-    // Approximate the size of 1.2 pixels in clip space
-    // clipPos.w is the distance, ScreenSize.y is the vertical resolution
-    float minSize = (1.2 / ScreenSize.y) * clipPos.w;
-
-    // Calculate the current "intended" size of the star corner
-    float currentSize = scale;
-
-    // If the star is smaller than our minimum, we calculate a scale-up factor
-    float sizeFactor = 1.0;
-    if (currentSize < minSize) {
-        sizeFactor = minSize / currentSize;
-    }
-
-    // Scale up the offset from the center
-    // We only scale the 'Normal * scale' part, NOT the wrappedCenter
-    vec3 antiFlickerOffset = (Normal * scale + stretchOffset) * sizeFactor;
-    vec4 finalClipPos = ProjMat * ViewMat * WorldMat * vec4(wrappedCenter + antiFlickerOffset, 1.0);
-    float brightnessComp = 1.0 / (sizeFactor * sizeFactor);
-
-    gl_Position = finalClipPos;
+    vec3 finalPos = wrappedCenter + offset + stretchOffset;
+    gl_Position = ProjMat * ViewMat * WorldMat * vec4(finalPos, 1.0);
 
     mat3 rotWorldInv = transpose(mat3(WorldMat));
     localUpUniverseSpace = normalize(rotWorldInv * vec3(0,1,0));
+    viewDir = distToCamera > 0.001 ? normalize(finalPos) : vec3(0, 0, 1);
 
-    // stars always render translated relative to player eve
-    viewDir = normalize(wrappedCenter + antiFlickerOffset);
+    // Brightness: always visible with a strong minimum
+    float proximityFade = 1.0 - smoothstep(BoxSize * 0.3, BoxSize * 0.5, distToCamera);
+    proximityFade = max(proximityFade, 0.2);
 
-
-
-    // Color fade in / out / special effects -------------
-
-    // --- Proximity Fade Logic ---
-
-    // Define your ranges:
-    float fadeStart = BoxSize * 0.5 * 0.2; // Stars start appearing
-    float fadeEnd = BoxSize * 0.5 * 0.25;   // Stars are fully opaque
-    float outOfRangeFadeStart = BoxSize * 0.5 * 0.9;
-    float outOfRangeFadeEnd = BoxSize * 0.5 * 1;
-
-    // smoothstep returns 0.0 if dist < fadeStart, 1.0 if dist > fadeEnd
-    float proximityFade = smoothstep(fadeStart, fadeEnd, distToCamera);
-    proximityFade *= 1-smoothstep(outOfRangeFadeStart, outOfRangeFadeEnd, distToCamera);
-
-    // Color calculation
     vColor = Color;
-    // Increase brightness when in warp travel with normalized speed
-    vColor *= (1.0 + speed / (1 + speed) * 3);
-    // Adjust for increases star size
-    vColor *= brightnessComp;
-    // Apply the fade out
+    vColor *= (1.0 + speed / (1 + speed) * 5);
     vColor *= proximityFade;
+
+    uv = Normal.xy;
 }

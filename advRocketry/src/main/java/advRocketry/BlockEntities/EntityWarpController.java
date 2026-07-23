@@ -10,6 +10,7 @@ import advRocketry.Dimension.DimensionManager;
 import advRocketry.Dimension.PlanetDimension;
 import advRocketry.Dimension.SpaceStationDimension;
 import advRocketry.Items.ItemGalaxyDatabase;
+import advRocketry.Items.ItemSystemIdChip;
 import advRocketry.Registry.Items;
 import advRocketry.Render.starmap.GuiModulePlanetView;
 import advRocketry.Render.starmap.SpaceMapScreen;
@@ -40,7 +41,9 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
 
     public GuiHandlerBlockEntity guiHandler;
     public ItemStackHandler galaxyStorage;
+    public ItemStackHandler systemChipStorage;
     public guiModuleItemHandlerSlot galaxyStorageGuiSlot;
+    public guiModuleItemHandlerSlot systemChipGuiSlot;
     public GuiModulePlanetView targetView;
     public GuiModulePlanetView currentView;
     public guiModuleText inOrbitText;
@@ -64,8 +67,25 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
             }
         };
 
+        systemChipStorage = new ItemStackHandler(1) {
+            public boolean isItemValid(int slot, ItemStack stack) {
+                return stack.getItem() instanceof ItemSystemIdChip;
+            }
+
+            public int getSlotLimit(int slot) {
+                return 1;
+            }
+
+            public void onContentsChanged(int slot) {
+                EntityWarpController.this.setChanged();
+            }
+        };
+
         galaxyStorageGuiSlot = new guiModuleItemHandlerSlot(0, galaxyStorage, 0, 0, 1, guiHandler, 90, 9);
         guiHandler.modules.add(galaxyStorageGuiSlot);
+
+        systemChipGuiSlot = new guiModuleItemHandlerSlot(1, systemChipStorage, 0, 0, 1, guiHandler, 90, 31);
+        guiHandler.modules.add(systemChipGuiSlot);
 
         if (FMLEnvironment.dist != Dist.DEDICATED_SERVER) {
             guiModuleButton openGalaxyButton = new ARLib.gui.modules.guiModuleButton(100, "open galaxy", guiHandler, 10, 10, 70, 15, BTN_BLACK, BTN_W, BTN_H) {
@@ -104,7 +124,7 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
                                 public String getInteractText(ResourceLocation dimensionId) {
                                     PlanetDimension planet = ((PlanetDimension) DimensionManager.INSTANCE_CLIENT.get(dimensionId));
                                     if (planet == null) return "";
-                                    if (planet.isKnown() || client_IsDistanceUnlocked(dimensionId)) {
+                                    if (planet.isKnown() || client_IsDistanceUnlocked(dimensionId) || client_IsInSystemChip(dimensionId)) {
                                         return "select";
                                     }
                                     return "";
@@ -115,7 +135,7 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
                                     PlanetDimension planet = ((PlanetDimension) DimensionManager.INSTANCE_CLIENT.get(dimensionId));
                                     if (planet == null) return "";
 
-                                    if (!planet.isKnown() && !client_IsDistanceUnlocked(dimensionId)) {
+                                    if (!planet.isKnown() && !client_IsDistanceUnlocked(dimensionId) && !client_IsInSystemChip(dimensionId)) {
                                         return "We require more information about this planet.";
                                     }
 
@@ -133,6 +153,9 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
                                     if (ItemGalaxyDatabase.isDimensionKnown(galaxyStorageGuiSlot.client_getItemStackToRender(), dimensionId))
                                         return true;
 
+                                    if (client_IsInSystemChip(dimensionId))
+                                        return true;
+
                                     if (DimensionManager.INSTANCE_CLIENT.get(level.dimension().location()) instanceof SpaceStationDimension spaceStation) {
                                         // orbited planet is always displayed
                                         if (Objects.equals(dimensionId, spaceStation.getParentDimensionId()) && spaceStation.isInOrbit()) {
@@ -147,6 +170,16 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
                                     if (DimensionManager.INSTANCE_CLIENT.get(dimensionId) instanceof PlanetDimension planetDimension)
                                         return ItemGalaxyDatabase.isDistanceUnlocked(galaxyStorageGuiSlot.client_getItemStackToRender(), planetDimension);
                                     else return false;
+                                }
+
+                                public boolean client_IsInSystemChip(ResourceLocation dimensionId) {
+                                    ResourceLocation systemId = ItemSystemIdChip.getSystemDimension(systemChipGuiSlot.client_getItemStackToRender());
+                                    if (systemId == null) return false;
+                                    Dimension d = DimensionManager.INSTANCE_CLIENT.get(dimensionId);
+                                    if (d instanceof PlanetDimension planet) {
+                                        return systemId.equals(planet.getParentDimensionId());
+                                    }
+                                    return false;
                                 }
                             }
                     );
@@ -191,6 +224,10 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
             Block.popResource(level, getBlockPos(), galaxyStorage.getStackInSlot(i));
             galaxyStorage.setStackInSlot(i, ItemStack.EMPTY);
         }
+        for (int i = 0; i < systemChipStorage.getSlots(); i++) {
+            Block.popResource(level, getBlockPos(), systemChipStorage.getStackInSlot(i));
+            systemChipStorage.setStackInSlot(i, ItemStack.EMPTY);
+        }
         setChanged();
     }
 
@@ -207,7 +244,9 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
             // just one additional check to make sure the client did not cheat...
             Dimension dim = DimensionManager.INSTANCE_SERVER.get(ResourceLocation.parse(dimId));
             if (dim instanceof PlanetDimension planetDimension) {
-                if (planetDimension.isKnown() || ItemGalaxyDatabase.isDistanceUnlocked(galaxyStorage.getStackInSlot(0), planetDimension)) {
+                ResourceLocation systemId = ItemSystemIdChip.getSystemDimension(systemChipStorage.getStackInSlot(0));
+                boolean inSystem = systemId != null && systemId.equals(planetDimension.getParentDimensionId());
+                if (planetDimension.isKnown() || ItemGalaxyDatabase.isDistanceUnlocked(galaxyStorage.getStackInSlot(0), planetDimension) || inSystem) {
                     targetView.setTargetAndSync(ResourceLocation.tryParse(dimId));
                     setChanged();
                 }
@@ -242,6 +281,7 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
         if (targetView.dimensionId != null)
             tag.putString("targetView", targetView.dimensionId.toString());
         tag.put("galaxyStorage", galaxyStorage.serializeNBT(registries));
+        tag.put("systemChipStorage", systemChipStorage.serializeNBT(registries));
     }
 
     @Override
@@ -250,6 +290,8 @@ public class EntityWarpController extends BlockEntity implements ARLib.network.I
         if (tag.contains("targetView"))
             targetView.setTargetAndSync(ResourceLocation.tryParse(tag.getString("targetView")));
         galaxyStorage.deserializeNBT(registries, tag.getCompound("galaxyStorage"));
+        if (tag.contains("systemChipStorage"))
+            systemChipStorage.deserializeNBT(registries, tag.getCompound("systemChipStorage"));
     }
 
     public void tick() {

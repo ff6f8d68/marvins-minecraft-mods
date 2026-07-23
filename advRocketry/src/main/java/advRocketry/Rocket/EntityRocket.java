@@ -616,6 +616,10 @@ public class EntityRocket extends Entity implements INetworkTagReceiver {
             ResourceLocation targetLocation = ItemPlanetIdChip.getSelectedDimension(navigationItem);
             if (targetLocation != null && ItemPlanetIdChip.containsMassData(navigationItem)) {
                 targetPos = getOnPos();
+                Dimension targetDim = DimensionManager.getDimensionManager(level().isClientSide).get(targetLocation);
+                if (targetDim != null) {
+                    targetDim.ensureDimensionCreated();
+                }
                 targetLevel = DimensionUtils.getDimensionLevelServer(targetLocation.toString());
             }
             if (!ItemPlanetIdChip.containsMassData(navigationItem)) {
@@ -708,6 +712,12 @@ public class EntityRocket extends Entity implements INetworkTagReceiver {
     public EntityRocket teleportTo(Level level, Vec3 targetPos, Vec3 velocity) {
 
         controller.setTargetPosition(null, false); // position is probably invalid because dimension change
+
+        if (level == null) {
+            infoText.setTextAndSync("target dimension not available");
+            temporaryInfoTimeout = 20 * 15;
+            return this;
+        }
 
         if (level != level() && level instanceof ServerLevel serverLevel) {
 

@@ -189,7 +189,7 @@ void main() {
         totalColor += planetShine * shineFactor * 0.2;
     }
 
-    if(totalBrightness < 1){
+    if(totalBrightness > 0.0001 && totalBrightness < 1){
         totalColor *= 1 / pow(totalBrightness, 0.5);
     }
 

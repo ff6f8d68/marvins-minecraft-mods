@@ -16,21 +16,29 @@ public abstract class Dimension {
     protected StarCache starCache; // holds current main stars
 
     boolean isClientSide;
+    boolean dimensionCreated = false;
 
     DimensionManager dimensionManager;
 
     public Dimension(DimensionProperties properties, DimensionManager dimensionManager) {
         this.properties = properties;
-        this.dimensionManager =dimensionManager;
+        this.dimensionManager = dimensionManager;
         this.isClientSide = dimensionManager.isClientSide;
+        starCache = new StarCache();
+    }
 
-        if(!isClientSide) {
-            if (getDimensionId().getNamespace().equals(Main.MODID) && canVisit()) {
+    /**
+     * Lazily creates the Minecraft ServerLevel for this dimension.
+     * Called before teleporting a player to this dimension.
+     * Safe to call multiple times — only creates on the first call.
+     */
+    public void ensureDimensionCreated() {
+        if (!dimensionCreated && !isClientSide) {
+            if (canVisit()) {
                 createDimension();
+                dimensionCreated = true;
             }
         }
-
-        starCache = new StarCache();
     }
 
     public DimensionProperties.DimensionType getType() {
@@ -96,8 +104,23 @@ public abstract class Dimension {
         return starCache.significantLightSourcesCache.keySet();
     }
 
+    public ResourceLocation getParentDimensionId(){
+        return null;
+    }
+
     protected void tickStarCache(){
         starCache.updateSignificantLightSourcesCache(this);
+    }
+
+    /// Called from the render loop to ensure this dimension's StarCache has been populated.
+    /// On the client, only the player's own dimension ticks its StarCache normally, so
+    /// non-local dimensions rendered in the sky would have empty caches. This forces a
+    /// scan (with full-scan-on-first-call optimization) so renderPlanet/renderRingSystem
+    /// have light data available.
+    public void ensureClientStarCacheCurrent(){
+        if (isClientSide) {
+            starCache.updateSignificantLightSourcesCache(this);
+        }
     }
 
     public void updateDimensionProperties(DimensionProperties properties){

@@ -130,7 +130,22 @@ public class SkyRenderer {
         RenderSystem.setShader(shaderUtils::getPlanetShader);
         ShaderInstance shader = RenderSystem.getShader();
 
-        RenderSystem.setShaderTexture(0, planetDimension.getTexture());
+        // Generate procedural texture on first use if needed (must be on render thread)
+        ResourceLocation texLocation = planetDimension.getTexture();
+        if (texLocation != null && !ProceduralPlanetTextureGenerator.isGenerated(texLocation)) {
+            String texPath = texLocation.getPath();
+            int seed = extractSeedFromTexturePath(texPath);
+            if (texPath.contains("procedural_star_")) {
+                ProceduralPlanetTextureGenerator.generateAndRegisterStar(texLocation, seed);
+            } else if (texPath.contains("procedural_")) {
+                int planetType = extractPlanetTypeFromPath(texPath);
+                ProceduralPlanetTextureGenerator.generateAndRegister(texLocation, planetType, seed);
+            }
+        }
+
+        if (texLocation == null) return;
+
+        RenderSystem.setShaderTexture(0, texLocation);
         shader.setSampler("Sampler0", RenderSystem.getShaderTexture(0));
 
         shader.getUniform("ProjMat").set(proj);
@@ -173,6 +188,11 @@ public class SkyRenderer {
 
         int totalLights = 0;
         Vec3 myPosition = planetDimension.getPosition(partialtick);
+
+        // Ensure StarCache is populated for this dimension (on client, only the player's
+        // own dimension normally ticks its StarCache — other rendered dimensions need this).
+        planetDimension.ensureClientStarCacheCurrent();
+
         if(!planetDimension.isStar()) {
             // stars do not reflect light, this would break visuals in double star systems
             for (ResourceLocation lightSourceId : planetDimension.getCurrentMainStars()) {
@@ -184,6 +204,50 @@ public class SkyRenderer {
                 Vector3f lightColor = RenderUtils.gamma_reverse(star.getEmissiveColor());
                 shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, star.getRadiationIntensity());
                 totalLights += 1;
+            }
+
+            // Fallback 1: walk up parent hierarchy to find a star
+            if (totalLights == 0) {
+                Dimension current = planetDimension;
+                for (int depth = 0; depth < 4 && current != null; depth++) {
+                    ResourceLocation parentId = current.getParentDimensionId();
+                    if (parentId == null) break;
+                    Dimension parent = DimensionManager.INSTANCE_CLIENT.get(parentId);
+                    if (parent == null) break;
+                    if (parent instanceof PlanetDimension planetParent && planetParent.isStar()) {
+                        Vec3 starPos = parent.getPosition(partialtick);
+                        Vec3 lightVec = myPosition.subtract(starPos).scale(-1);
+                        shader.getUniform("LightVectors[" + totalLights + "]").set((float) lightVec.x, (float) lightVec.y, (float) lightVec.z);
+                        Vector3f lightColor = RenderUtils.gamma_reverse(parent.getEmissiveColor());
+                        shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, parent.getRadiationIntensity());
+                        totalLights += 1;
+                        break;
+                    }
+                    current = parent;
+                }
+            }
+
+            // Fallback 2: brute-force search all client dimensions for the nearest star
+            if (totalLights == 0) {
+                Dimension nearestStar = null;
+                double nearestDist = Double.MAX_VALUE;
+                for (Dimension dim : DimensionManager.INSTANCE_CLIENT.dimensions.values()) {
+                    if (dim instanceof PlanetDimension pd && pd.isStar() && !dim.getDimensionId().equals(planetDimension.getDimensionId())) {
+                        double dist = myPosition.distanceToSqr(dim.getPosition(partialtick));
+                        if (dist < nearestDist) {
+                            nearestDist = dist;
+                            nearestStar = dim;
+                        }
+                    }
+                }
+                if (nearestStar != null) {
+                    Vec3 starPos = nearestStar.getPosition(partialtick);
+                    Vec3 lightVec = myPosition.subtract(starPos).scale(-1);
+                    shader.getUniform("LightVectors[" + totalLights + "]").set((float) lightVec.x, (float) lightVec.y, (float) lightVec.z);
+                    Vector3f lightColor = RenderUtils.gamma_reverse(nearestStar.getEmissiveColor());
+                    shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, nearestStar.getRadiationIntensity());
+                    totalLights += 1;
+                }
             }
         }
         shader.getUniform("LightCount").set(totalLights);
@@ -253,6 +317,10 @@ public class SkyRenderer {
         shader.getUniform("playerEye").set(eyePos);
         shader.getUniform("planetSkyHeight").set((float) Config.INSTANCE.planet_Sky_Height);
 
+        // Ensure StarCache is populated for this dimension (on client, only the player's
+        // own dimension normally ticks its StarCache — other rendered dimensions need this).
+        planetDimension.ensureClientStarCacheCurrent();
+
         int totalLights = 0;
         Vec3 myPosition = planetDimension.getPosition(partialtick);
         for (ResourceLocation lightSourceId : planetDimension.getCurrentMainStars()) {
@@ -265,6 +333,51 @@ public class SkyRenderer {
             shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, star.getRadiationIntensity());
             totalLights += 1;
         }
+
+        // Fallback 1: walk up parent hierarchy to find a star
+        if (totalLights == 0 && !planetDimension.isStar()) {
+            Dimension current = planetDimension;
+            for (int depth = 0; depth < 4 && current != null; depth++) {
+                ResourceLocation parentId = current.getParentDimensionId();
+                if (parentId == null) break;
+                Dimension parent = DimensionManager.INSTANCE_CLIENT.get(parentId);
+                if (parent == null) break;
+                if (parent instanceof PlanetDimension planetParent && planetParent.isStar()) {
+                    Vec3 starPos = parent.getPosition(partialtick);
+                    Vec3 lightVec = myPosition.subtract(starPos).scale(-1);
+                    shader.getUniform("LightVectors[" + totalLights + "]").set((float) lightVec.x, (float) lightVec.y, (float) lightVec.z);
+                    Vector3f lightColor = RenderUtils.gamma_reverse(parent.getEmissiveColor());
+                    shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, parent.getRadiationIntensity());
+                    totalLights += 1;
+                    break;
+                }
+                current = parent;
+            }
+        }
+
+        // Fallback 2: brute-force search all client dimensions for the nearest star
+        if (totalLights == 0) {
+            Dimension nearestStar = null;
+            double nearestDist = Double.MAX_VALUE;
+            for (Dimension dim : DimensionManager.INSTANCE_CLIENT.dimensions.values()) {
+                if (dim instanceof PlanetDimension pd && pd.isStar() && !dim.getDimensionId().equals(planetDimension.getDimensionId())) {
+                    double dist = myPosition.distanceToSqr(dim.getPosition(partialtick));
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestStar = dim;
+                    }
+                }
+            }
+            if (nearestStar != null) {
+                Vec3 starPos = nearestStar.getPosition(partialtick);
+                Vec3 lightVec = myPosition.subtract(starPos).scale(-1);
+                shader.getUniform("LightVectors[" + totalLights + "]").set((float) lightVec.x, (float) lightVec.y, (float) lightVec.z);
+                Vector3f lightColor = RenderUtils.gamma_reverse(nearestStar.getEmissiveColor());
+                shader.getUniform("LightColors[" + totalLights + "]").set(lightColor.x, lightColor.y, lightColor.z, nearestStar.getRadiationIntensity());
+                totalLights += 1;
+            }
+        }
+
         shader.getUniform("LightCount").set(totalLights);
 
         TRANSLUCENT_TRANSPARENCY.setupRenderState();
@@ -294,6 +407,17 @@ public class SkyRenderer {
     }
 
     public static void ensureMipmapTexture(ResourceLocation texture){
+        if (texture == null) return;
+
+        String texPath = texture.getPath();
+
+        // Procedural textures are generated at runtime as DynamicTexture, not loaded from resource files.
+        // They MUST be generated on the render thread (NativeImage + TextureManager.register require it).
+        // SkyRenderer.renderPlanet() handles them safely on the render thread, so skip here.
+        if (texPath.contains("procedural_")) {
+            return;
+        }
+
         // ensure it is using the mipmap texture
         TextureManager texturemanager = Minecraft.getInstance().getTextureManager();
         if (!(texturemanager.getTexture(texture) instanceof MipmapSimpleTexture)) {
@@ -304,47 +428,57 @@ public class SkyRenderer {
     }
 
     void createStarBackgroundBuffer() {
-        // making it too small makes it not work with the minecraft bobbing effect and stars will jump around
-        int starCount = 8000;
-        // need them far away or view bobbing will break shit
+        int starCount = Config.INSTANCE.star_Background_Count;
         float BoxSize = 50000;
-        float scale = 5f;
-
-        WavefrontObject cube;
-        try {
-            cube = new WavefrontObject(ResourceLocation.fromNamespaceAndPath(Main.MODID, "models/environment/smooth_cube.obj"));
-        } catch (ModelFormatException ex) {
-            throw new RuntimeException(ex);
-        }
+        float scale = 1.0f;
 
         vertexBufferStarBackground = new VertexBuffer(VertexBuffer.Usage.STATIC);
-        ByteBufferBuilder byteBuffer = new ByteBufferBuilder(starCount * 8 * 32);
+        // 4 vertices per billboard quad, 32 bytes per vertex
+        ByteBufferBuilder byteBuffer = new ByteBufferBuilder(starCount * 4 * 32);
         BufferBuilder bufferbuilder = new BufferBuilder(byteBuffer, VertexFormat.Mode.QUADS, STAR_BACKGROUND);
 
+        // Billboard corner offsets (in local space, will be oriented to camera in shader)
+        float[][] corners = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+
+        java.util.Random rng = new java.util.Random(42);
 
         for (int i = 0; i < starCount; i++) {
-            // 1. Generate a random center
-            float cx = (float) ((Math.random() - 0.5) * BoxSize);
-            float cy = (float) ((Math.random() - 0.5) * BoxSize);
-            float cz = (float) ((Math.random() - 0.5) * BoxSize);
+            // Random position in a sphere for natural distribution
+            double theta = rng.nextDouble() * 2 * Math.PI;
+            double phi = Math.acos(2 * rng.nextDouble() - 1);
+            double r = Math.pow(rng.nextDouble(), 0.333) * BoxSize * 0.5;
+            float cx = (float) (r * Math.sin(phi) * Math.cos(theta));
+            float cy = (float) (r * Math.sin(phi) * Math.sin(theta));
+            float cz = (float) (r * Math.cos(phi));
 
-            int color = RenderUtils.packColor(1, 1, 1, 1);
+            // Random color temperature: blue-white, white, yellow-white, orange
+            float tempRoll = rng.nextFloat();
+            float cr, cg, cb;
+            float brightness = 0.6f + rng.nextFloat() * 0.4f;
+            if (tempRoll < 0.15f) {
+                // Hot blue-white stars
+                cr = 0.7f * brightness; cg = 0.8f * brightness; cb = 1.0f * brightness;
+            } else if (tempRoll < 0.4f) {
+                // White stars
+                cr = 0.9f * brightness; cg = 0.9f * brightness; cb = 0.95f * brightness;
+            } else if (tempRoll < 0.75f) {
+                // Yellow-white (sun-like)
+                cr = 1.0f * brightness; cg = 0.95f * brightness; cb = 0.8f * brightness;
+            } else {
+                // Orange/red stars
+                cr = 1.0f * brightness; cg = 0.7f * brightness; cb = 0.5f * brightness;
+            }
+            int color = RenderUtils.packColor(cr, cg, cb, 1);
 
-            for (Face face : cube.groupObjects.get("Cube").faces) {
-                for (int j = 0; j < face.vertices.length; ++j) {
-                    // Get the raw local vertex from the OBJ (e.g., -1.0 or 1.0)
-                    float vx = face.vertices[j].x * scale;
-                    float vy = face.vertices[j].y * scale;
-                    float vz = face.vertices[j].z * scale;
+            for (int c = 0; c < 4; c++) {
+                float vx = corners[c][0] * scale;
+                float vy = corners[c][1] * scale;
+                float vz = 0;
 
-                    // ADD THE CENTER TO THE POSITION
-                    // STORE THE LOCAL OFFSET IN THE NORMAL
-                    bufferbuilder
-                            .addVertex(cx + vx, cy + vy, cz + vz)
-                            .setColor(color)
-                            .setNormal(vx / scale, vy / scale, vz / scale);
-                    // We divide by scale so the normal is exactly -1.0 or 1.0
-                }
+                bufferbuilder
+                        .addVertex(cx + vx, cy + vy, cz + vz)
+                        .setColor(color)
+                        .setNormal(vx / scale, vy / scale, vz / scale);
             }
         }
 
@@ -546,42 +680,91 @@ public class SkyRenderer {
         newProj2.set(2, 2, -(f2 + n2) / (f2 - n2));
         newProj2.set(3, 2, -(2f * f2 * n2) / (f2 - n2));
 
-        // render star background first
-        // no depth write required
-        GlStateManager._depthMask(false);
-        Matrix4f starBackgroundModelMat = new Matrix4f();
-        starBackgroundModelMat.translate(myDimensionPositionInSpace.toVector3f().mul(-1));
+        // render star background first (disabled by default, enable via config to test NASA stars)
+        ShaderInstance shader = null;
+        if (Config.INSTANCE.enable_Star_Background) {
+            GlStateManager._depthMask(false);
+            GlStateManager._disableDepthTest();
+            ADDITIVE_TRANSPARENCY.setupRenderState();
+            Matrix4f starBackgroundModelMat = new Matrix4f();
+            starBackgroundModelMat.translate(myDimensionPositionInSpace.toVector3f().mul(-1));
 
-        RenderSystem.setShader(shaderUtils::getstarBackgroundShader);
-        ShaderInstance shader = RenderSystem.getShader();
-        shader.getUniform("ViewMat").set(viewMatrix);
-        shader.getUniform("WorldMat").set(worldMatrix);
-        shader.getUniform("ModelMat").set(starBackgroundModelMat);
-        shader.getUniform("ProjMat").set(newProj2);
-        Vector3f movement = myCurrentSpaceObject.getMovement().toVector3f();
-        shader.getUniform("WarpMovement").set(movement);
-        shader.getUniform("ScreenSize").set(windowWidth, windowHeight);
-        shader.getUniform("LocalAtmDensity").set(myAtmDensity);
-        shader.getUniform("playerHeight").set(playerHeightAboveSea);
-        shader.getUniform("planetSkyHeight").set((float) Config.INSTANCE.planet_Sky_Height);
+            RenderSystem.setShader(shaderUtils::getstarBackgroundShader);
+            shader = RenderSystem.getShader();
+            shader.getUniform("ViewMat").set(viewMatrix);
+            shader.getUniform("WorldMat").set(worldMatrix);
+            shader.getUniform("ModelMat").set(starBackgroundModelMat);
+            shader.getUniform("ProjMat").set(newProj2);
+            Vector3f movement = myCurrentSpaceObject.getMovement().toVector3f();
+            shader.getUniform("WarpMovement").set(movement);
+            shader.getUniform("ScreenSize").set(windowWidth, windowHeight);
+            shader.getUniform("LocalAtmDensity").set(myAtmDensity);
+            shader.getUniform("playerHeight").set(playerHeightAboveSea);
+            shader.getUniform("planetSkyHeight").set((float) Config.INSTANCE.planet_Sky_Height);
 
-        double overGamma = Math.max(0, Minecraft.getInstance().options.gamma().get() - 0.5);
-        float BrightnessModifier = 2;
-        BrightnessModifier += (float) (2 * overGamma);
-        BrightnessModifier *= (float) Math.max(0, (1 - Math.pow(myCurrentSpaceObject.getSkyDarken(), 0.1))); // stars will darken very fast even on low values while sky darkens normally
-        shader.getUniform("BrightnessModifier").set(BrightnessModifier);
+            double overGamma = Math.max(0, Minecraft.getInstance().options.gamma().get() - 0.5);
+            float BrightnessModifier = 3;
+            BrightnessModifier += (float) (3 * overGamma);
+            BrightnessModifier *= (float) Math.max(0, (1 - Math.pow(myCurrentSpaceObject.getSkyDarken(), 0.1))); // stars will darken very fast even on low values while sky darkens normally
+            shader.getUniform("BrightnessModifier").set(BrightnessModifier);
 
-        shader.apply();
-        vertexBufferStarBackground.bind();
-        vertexBufferStarBackground.draw();
-        shader.clear();
-        GlStateManager._depthMask(true);
+            shader.apply();
+            vertexBufferStarBackground.bind();
+            vertexBufferStarBackground.draw();
+            shader.clear();
+            ADDITIVE_TRANSPARENCY.clearRenderState();
+            GlStateManager._enableDepthTest();
+            GlStateManager._depthMask(true);
+        }
 
         // enable depth test for planet rendering so the rings render correctly only in front of the planet
         LEQUAL_DEPTH_TEST.setupRenderState();
 
+        // Determine the player's star system for culling planets from other systems.
+        // Stars from other systems still render as navigation points.
+        ResourceLocation myStarId = null;
+        {
+            Dimension walk = myCurrentSpaceObject;
+            for (int d = 0; d < 4 && walk != null; d++) {
+                if (walk instanceof PlanetDimension pd && pd.isStar()) {
+                    myStarId = pd.getDimensionId();
+                    break;
+                }
+                ResourceLocation pid = walk.getParentDimensionId();
+                if (pid == null) break;
+                walk = DimensionManager.INSTANCE_CLIENT.get(pid);
+            }
+        }
+
         // Render planets / stars
         for (PlanetDimension otherDimension : PlanetRenderCache.INSTANCE.getPlanetsToRenderInSky()) {
+
+            // Skip non-star planets from other star systems — too resource intensive to render
+            // thousands of NASA planets and their rings when the player can't meaningfully see them.
+            if (!otherDimension.isStar() && myStarId != null) {
+                ResourceLocation otherSystemId = null;
+                ResourceLocation otherParentId = otherDimension.getParentDimensionId();
+                if (otherParentId != null) {
+                    Dimension parentDim = DimensionManager.INSTANCE_CLIENT.get(otherParentId);
+                    if (parentDim instanceof PlanetDimension parentPD) {
+                        if (parentPD.isStar()) {
+                            otherSystemId = parentPD.getDimensionId();
+                        } else {
+                            // Moon of a planet — go up one more level
+                            ResourceLocation grandParentId = parentPD.getParentDimensionId();
+                            if (grandParentId != null) {
+                                Dimension grandParent = DimensionManager.INSTANCE_CLIENT.get(grandParentId);
+                                if (grandParent instanceof PlanetDimension gpPD && gpPD.isStar()) {
+                                    otherSystemId = gpPD.getDimensionId();
+                                }
+                            }
+                        }
+                    }
+                }
+                if (otherSystemId != null && !myStarId.equals(otherSystemId)) {
+                    continue;
+                }
+            }
 
             // current position could be slightly modified when this is my planet, thats why i make a copy
             Vec3 myCurrentPositionInSpace = myDimensionPositionInSpace;
@@ -640,26 +823,22 @@ public class SkyRenderer {
             double trueRadius = CelestialUtils.fromEarthRadius(otherDimension.getEarthRadiusMultiplier());
             double geometryScale = trueRadius * Config.INSTANCE.planet_Render_Scale_Multiplier;
 
-            // to avoid star not being rendered because to small, it should be scaled to cover 1 or 2 px minimum
-            // but the brightness has to be scaled too or it wil look strange
+            // Stars maintain a minimum apparent size on screen so they are always
+            // visible as bright points of light from any planet surface.
+            // Instead of dimming with inverse-square (which makes distant stars invisible),
+            // we use a soft falloff and a high minimum brightness floor.
 
-            // A threshold representing roughly 1-2 pixels on screen.
-            // Note: You may need to tweak this specific value slightly depending on your camera FOV!
-            double minApparentSize = 0.001;
+            double minApparentSize = 0.002;
 
             double distance = relativePos.length();
             double apparentSizeRatio = geometryScale / distance;
             if (apparentSizeRatio < minApparentSize && otherDimension.isStar()) {
-                // 1. Inflate the star so it hits the minimum pixel size
+                // Inflate the star so it hits the minimum pixel size
                 double scaleCorrection = minApparentSize / apparentSizeRatio;
                 geometryScale *= scaleCorrection;
 
-                // 2. Dim the star to conserve energy (inverse square law)
-                // If we make it twice as big, it should be 4 times dimmer.
-                brightness = (float) (1.0 / (scaleCorrection * scaleCorrection));
-
-                // clamp brightness so it doesn't drop completely to 0 and disappear
-                brightness = Math.max(brightness, 0.01f);
+                // Brightness stays high so distant stars are clearly visible as bright points
+                brightness = (float) Math.max(1.0 / Math.pow(scaleCorrection, 0.25), 0.7f);
             }
 
             planetMatrix.scale((float) geometryScale);
@@ -691,7 +870,7 @@ public class SkyRenderer {
 
             }
 
-            if (otherDimension.hasRings()) {
+            if (otherDimension.hasRings() && apparentSizeRatio > 0.003) {
                 renderRingSystem(
                         otherDimension,
                         newProj2,
@@ -771,7 +950,7 @@ public class SkyRenderer {
 
         // Switch back to main render target, clear & combine framebuffers
         Minecraft.getInstance().getMainRenderTarget().bindWrite(true);
-        RenderSystem.clear(GL30.GL_DEPTH_BUFFER_BIT, false); // always render on top
+        RenderSystem.clear(GL30.GL_COLOR_BUFFER_BIT | GL30.GL_DEPTH_BUFFER_BIT, false);
         RenderSystem.setShader(shaderUtils::getBlitPostProcessingShader);
         shader = RenderSystem.getShader();
         shader.setSampler("Frame", PlanetsStarsAndAtmosphereTarget.getColorTextureId());
@@ -812,15 +991,17 @@ public class SkyRenderer {
 
         RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 1f);
 
-        // render atmosphere first
-        AtmosphereTarget.bindWrite(true);
-        RenderSystem.clear(GL30.GL_COLOR_BUFFER_BIT | GL30.GL_DEPTH_BUFFER_BIT, false);
-        if (myCurrentSpaceObject instanceof PlanetDimension)
-            // only planets need atm shader
-            renderSkyBox(proj, view, worldMatrix, partialtick);
-        if (myCurrentSpaceObject instanceof SpaceStationDimension)
-            // space station has now atm, but maybe warp travel effects
-            renderWarpTravelBox(proj, view, worldMatrix, partialtick);
+        // render atmosphere first (disabled by default via config to test NASA stars)
+        if (Config.INSTANCE.enable_Sky_Background) {
+            AtmosphereTarget.bindWrite(true);
+            RenderSystem.clear(GL30.GL_COLOR_BUFFER_BIT | GL30.GL_DEPTH_BUFFER_BIT, false);
+            if (myCurrentSpaceObject instanceof PlanetDimension)
+                // only planets need atm shader
+                renderSkyBox(proj, view, worldMatrix, partialtick);
+            if (myCurrentSpaceObject instanceof SpaceStationDimension)
+                // space station has now atm, but maybe warp travel effects
+                renderWarpTravelBox(proj, view, worldMatrix, partialtick);
+        }
 
         // now render the planets and stars
         PlanetsAndStarsTarget.bindWrite(true);
@@ -834,5 +1015,43 @@ public class SkyRenderer {
 
         // Clear depth buffer for subsequent rendering
         RenderSystem.clear(GL30.GL_DEPTH_BUFFER_BIT, false);
+    }
+
+    /**
+     * Extract planet type integer from procedural texture path.
+     * Path format: procedural_{type}_{hexSeed}.png
+     */
+    private static int extractPlanetTypeFromPath(String texPath) {
+        try {
+            String filename = texPath.substring(texPath.lastIndexOf('/') + 1);
+            // Remove "procedural_" prefix and ".png" suffix
+            String body = filename.replace("procedural_", "").replace(".png", "");
+            // Split on underscore - first part is the type number
+            int underscoreIdx = body.indexOf('_');
+            if (underscoreIdx > 0) {
+                return Integer.parseInt(body.substring(0, underscoreIdx));
+            }
+        } catch (Exception ignored) {}
+        return 0; // TYPE_ROCKY default
+    }
+
+    /**
+     * Extract the hex seed from a procedural texture path.
+     * Path formats:
+     *   procedural_star_{hexSeed}.png
+     *   procedural_{type}_{hexSeed}.png
+     * The seed is always the last underscore-separated segment before .png.
+     */
+    private static int extractSeedFromTexturePath(String texPath) {
+        try {
+            String filename = texPath.substring(texPath.lastIndexOf('/') + 1);
+            String body = filename.replace(".png", "");
+            int lastUnderscore = body.lastIndexOf('_');
+            if (lastUnderscore > 0) {
+                String hexSeed = body.substring(lastUnderscore + 1);
+                return (int) Long.parseLong(hexSeed, 16);
+            }
+        } catch (Exception ignored) {}
+        return 0;
     }
 }

@@ -54,6 +54,7 @@
   "block.adv_rocketry.astrobody_data_processor": "Astrobody Data Processor",
   "block.adv_rocketry.wireless_transceiver": "Wireless Transceiver",
   "block.adv_rocketry.solar_panel": "Solar Panel",
+  "block.adv_rocketry.creative_energy": "Creative Energy Block",
   "block.adv_rocketry.oxygen_vent": "Oxygen Vent",
   "block.adv_rocketry.space_station_assembler": "Space Station Assembler",
   "block.adv_rocketry.station_controller": "Station Controller",
@@ -62,6 +63,8 @@
   "block.adv_rocketry.moon_turf": "Moon Turf",
   "block.adv_rocketry.moon_turf_dark": "Dark Moon Turf",
   "block.adv_rocketry.dry_ice": "Dry Ice",
+  "block.adv_rocketry.planet_auto_discoverer": "Planet Auto Discoverer",
+  "item.adv_rocketry.system_id_chip": "System ID Chip",
 
   "item.adv_rocketry.oxygen_bucket": "Oxygen",
   "fluid_type.adv_rocketry.oxygen_type": "Oxygen",

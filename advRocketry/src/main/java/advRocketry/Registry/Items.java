@@ -54,10 +54,12 @@ public class Items {
     public static final Supplier<Item> ITEM_OXYGEN_VENT = registerBlockItem("oxygen_vent", Blocks.OXYGEN_VENT);
     public static final Supplier<Item> ITEM_DATA_STORAGE_BLOCK = registerBlockItem("data_storage_block", Blocks.DATA_STORAGE_BLOCK);
     public static final Supplier<Item> ITEM_SOLAR_PANEL = ITEMS.register("solar_panel", () -> new ItemSolarPanel());
+    public static final Supplier<Item> ITEM_CREATIVE_ENERGY = registerBlockItem("creative_energy", Blocks.CREATIVE_ENERGY);
     public static final Supplier<Item> ITEM_WIRELESS_TRANSCEIVER = registerBlockItem("wireless_transceiver", Blocks.WIRELESS_TRANSCEIVER);
     public static final Supplier<Item> ITEM_FLUID_RELEASE = ITEMS.register("fluid_release", () -> new ItemFluidRelease());
     public static final Supplier<Item> ITEM_PRESSURE_TANK = registerBlockItem("pressure_tank", Blocks.PRESSURE_TANK);
     public static final Supplier<Item> ITEM_SUIT_WORKSTATION = registerBlockItem("suit_workstation", Blocks.SUIT_WORKSTATION);
+    public static final Supplier<Item> ITEM_PLANET_AUTO_DISCOVERER = registerBlockItem("planet_auto_discoverer", Blocks.PLANET_AUTO_DISCOVERER);
 
     public static final Supplier<Item> ITEM_SPACE_STATION_ASSEMBLER = registerBlockItem("space_station_assembler", Blocks.SPACE_STATION_ASSEMBLER);
     public static final Supplier<Item> ITEM_ORIENTATION_CONTROLLER = registerBlockItem("orientation_controller", Blocks.ORIENTATION_CONTROLLER);
@@ -80,6 +82,8 @@ public class Items {
     public static final Supplier<Item> ITEM_SATELLITE_BIOME_CHANGER = ITEMS.register("satellite_biome_changer", () -> new ItemSatelliteBiomeChanger());
     public static final Supplier<Item> ITEM_SATELLITE_ID_CHIP = ITEMS.register("satellite_id_chip", () -> new ItemSatelliteIdChip());
     public static final Supplier<Item> ITEM_SATELLITE_BIOME_CHANGER_REMOTE = ITEMS.register("biome_changer_remote", () -> new ItemBiomeChangerRemote());
+
+    public static final Supplier<Item> ITEM_SYSTEM_ID_CHIP = ITEMS.register("system_id_chip", () -> new ItemSystemIdChip());
 
     public static final Supplier<Item> ITEM_MOON_TURF = registerBlockItem("moon_turf", Blocks.MOON_TURF);
     public static final Supplier<Item> ITEM_MOON_TURF_DARK = registerBlockItem("moon_turf_dark", Blocks.MOON_TURF_DARK);

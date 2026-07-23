@@ -75,47 +75,55 @@ public class PlanetEvents {
             boolean shouldFreezeWater = planetTemp < GasRegistry.gases.get(GasRegistry.water).getFreezeTemp(atmLevel) - 1;
 
             if (event.isNewChunk()) {
+                int chunkX = event.getChunk().getPos().x;
+                int chunkZ = event.getChunk().getPos().z;
+
+                // Synchronous per-column work (fast, no block changes)
                 for (int cx = 0; cx < 16; cx++) {
                     for (int cz = 0; cz < 16; cz++) {
                         int x = event.getChunk().getPos().getBlockX(cx);
                         int z = event.getChunk().getPos().getBlockZ(cz);
 
                         if (((PlanetDimensionProperties) planet.properties).customSeaFluid == null) {
-                            // it generated water, save initial water level so that it doesn't rain by default and fill caves
                             SeaLevelAdjustment.saveInitialWaterLevelOnChunkGeneration(serverLevel, event.getChunk(), x, z);
                         }
 
                         TerraformingSystem.storeGeneratedBiome(TerraformingSystem.getCurrentSurfaceBiome(serverLevel, x, z), event.getChunk(), x, z);
+                    }
+                }
 
-                        // tell the server to run this task after the chunk generation stuff is all completed to avoid deadlocks (i guess)
-                        serverLevel.getServer().tell(new TickTask(serverLevel.getServer().getTickCount(), () -> {
+                // Batch all block changes into a single TickTask instead of 256 individual ones
+                serverLevel.getServer().tell(new TickTask(serverLevel.getServer().getTickCount(), () -> {
+                    for (int cx = 0; cx < 16; cx++) {
+                        for (int cz = 0; cz < 16; cz++) {
+                            int x = chunkX * 16 + cx;
+                            int z = chunkZ * 16 + cz;
 
                             // adjust sea level
                             for (GasRegistry.Gas gas : GasRegistry.gases.values()) {
                                 while (SeaLevelAdjustment.adjustSeaLevelIfRequired(planet, gas, x, z, 2 | 16)) {
-                                    continue; // nothing to do, all the action happens above
+                                    continue;
                                 }
                             }
 
                             // place dry ice
                             while (DryIceBlock.placeDryIceIfPossible(planet, x, z, 2 | 16)) {
-                                continue; // nothing to do, all the action happens above
+                                continue;
                             }
 
-                            // after sea level adjustment, maybe freeze water or do other actions
-                            for (int y = serverLevel.getMinBuildHeight(); y < serverLevel.getHeight(Heightmap.Types.WORLD_SURFACE, x, z); y++) {
-                                BlockPos pos = new BlockPos(x, y, z);
-                                BlockState state = serverLevel.getBlockState(pos);
-
-                                // freeze water if possible, after the sea level is adjusted
-                                if (state.getBlock().equals(net.minecraft.world.level.block.Blocks.WATER) && shouldFreezeWater) {
-                                    serverLevel.setBlock(pos, net.minecraft.world.level.block.Blocks.ICE.defaultBlockState(), 2 | 16);
+                            // freeze water if needed
+                            if (shouldFreezeWater) {
+                                for (int y = serverLevel.getMinBuildHeight(); y < serverLevel.getHeight(Heightmap.Types.WORLD_SURFACE, x, z); y++) {
+                                    BlockPos pos = new BlockPos(x, y, z);
+                                    BlockState state = serverLevel.getBlockState(pos);
+                                    if (state.getBlock().equals(net.minecraft.world.level.block.Blocks.WATER)) {
+                                        serverLevel.setBlock(pos, net.minecraft.world.level.block.Blocks.ICE.defaultBlockState(), 2 | 16);
+                                    }
                                 }
                             }
-                        }));
+                        }
                     }
-                    //System.out.println("block replacement on chunk load: " + (double) (System.nanoTime() - t0) / 1000 / 1000);
-                }
+                }));
             }
         }
     }

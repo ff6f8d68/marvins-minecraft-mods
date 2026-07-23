@@ -84,4 +84,26 @@ public class Config {
     // in ideal conditions, it will transfer a total of 1 * planet_Photosynthesis_Factor every tick
     public double planet_Photosynthesis_Factor = (double) 1 / 10000000;
 
+    // NASA Universe: load real exoplanet data from NASA Exoplanet Archive + Gaia DR3
+    // This adds thousands of real star systems with procedurally-generated planets
+    // Requires running tools/universe_generator.py first to generate universe_data.json
+    public boolean enable_Nasa_Universe = true;
+    // Maximum number of star systems to load from the NASA data (0 = unlimited)
+    // Higher numbers use more memory and may slow down the space map
+    public int nasa_Universe_Max_Stars = 0;
+
+    // Maximum number of celestial bodies rendered in the sky per frame.
+    // 0 = unlimited (render all visible bodies). Higher values = more draw calls.
+    public int max_Rendered_Bodies_In_Sky = 250;
+
+    // Render the decorative random star background (billions of stars).
+    public boolean enable_Star_Background = true;
+
+    // Number of decorative background stars to generate.
+    // Higher = denser starfield. 200000+ gives a rich Milky Way feel.
+    public int star_Background_Count = 200000;
+
+    // Disable the atmosphere/sky dome background. Useful for testing NASA star rendering.
+    public boolean enable_Sky_Background = true;
+
 }

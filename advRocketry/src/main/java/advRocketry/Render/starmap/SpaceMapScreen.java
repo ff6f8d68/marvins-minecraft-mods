@@ -553,20 +553,22 @@ public class SpaceMapScreen extends Screen {
 
         ShaderInstance shader;
 
-        // render star background
-        RenderSystem.setShader(shaderUtils::getstarBackgroundShader);
-        shader = RenderSystem.getShader();
-        shader.getUniform("ViewMat").set(new Matrix4f());
-        shader.getUniform("WorldMat").set(new Matrix4f());
-        shader.getUniform("ModelMat").set(new Matrix4f());
-        shader.getUniform("ProjMat").set(new Matrix4f().setPerspective(90F, (float) (windowWidth / windowHeight), 10F, 1000000F));
-        shader.getUniform("BrightnessModifier").set(1f);
-        shader.getUniform("WarpMovement").set(new Vector3f(0, 0, 0));
-        shader.getUniform("ScreenSize").set(windowWidth, windowHeight);
-        shader.apply();
-        SkyRenderer.vertexBufferStarBackground.bind();
-        SkyRenderer.vertexBufferStarBackground.draw();
-        shader.clear();
+        // render star background (disabled by default, enable via config to test NASA stars)
+        if (advRocketry.Config.INSTANCE.enable_Star_Background) {
+            RenderSystem.setShader(shaderUtils::getstarBackgroundShader);
+            shader = RenderSystem.getShader();
+            shader.getUniform("ViewMat").set(new Matrix4f());
+            shader.getUniform("WorldMat").set(new Matrix4f());
+            shader.getUniform("ModelMat").set(new Matrix4f());
+            shader.getUniform("ProjMat").set(new Matrix4f().setPerspective(90F, (float) (windowWidth / windowHeight), 10F, 1000000F));
+            shader.getUniform("BrightnessModifier").set(1f);
+            shader.getUniform("WarpMovement").set(new Vector3f(0, 0, 0));
+            shader.getUniform("ScreenSize").set(windowWidth, windowHeight);
+            shader.apply();
+            SkyRenderer.vertexBufferStarBackground.bind();
+            SkyRenderer.vertexBufferStarBackground.draw();
+            shader.clear();
+        }
 
         RenderSystem.clear(GL30.GL_DEPTH_BUFFER_BIT, false);
 
