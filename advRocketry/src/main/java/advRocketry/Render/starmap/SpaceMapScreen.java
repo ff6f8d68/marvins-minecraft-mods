@@ -408,8 +408,8 @@ public class SpaceMapScreen extends Screen {
         Matrix4f projMatrix = new Matrix4f();
         float fov = (float) Math.toRadians(45.0f); // less stretching
         float aspect = (float) windowWidth / windowHeight;
-        float near = (zoom + 1) * 0.001f;
-        float far = (zoom + 1) * 1000;
+        float near = Math.max(0.1f, (zoom + 1) * 0.1f); // Increased near plane to prevent clipping
+        float far = (zoom + 1) * 10000; // Increased far plane for better depth range
         projMatrix.setPerspective(fov, aspect, near, far);
         return projMatrix;
     }

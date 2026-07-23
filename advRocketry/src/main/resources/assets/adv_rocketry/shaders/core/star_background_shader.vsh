@@ -18,24 +18,12 @@ uniform vec3 WarpMovement;
 uniform ivec2 ScreenSize;
 
 void main() {
-    float BoxSize = 50000;
     float scale = 1.0;
 
     vec3 staticCenter = Position - (Normal * scale);
     vec3 relativeCenter = (ModelMat * vec4(staticCenter, 1.0)).xyz;
 
-    // Spherical wrapping: wrap distance from camera, not per-axis
-    float distFromCamera = length(relativeCenter);
-    vec3 wrappedCenter;
-    if (distFromCamera > BoxSize * 0.5) {
-        vec3 dir = relativeCenter / distFromCamera;
-        float wrappedDist = mod(distFromCamera, BoxSize * 0.5);
-        wrappedCenter = dir * wrappedDist;
-    } else {
-        wrappedCenter = relativeCenter;
-    }
-
-    float distToCamera = length(wrappedCenter);
+    float distToCamera = length(relativeCenter);
 
     // Billboard: orient quad to face camera
     vec3 camRight = normalize(vec3(ViewMat[0][0], ViewMat[1][0], ViewMat[2][0]));
@@ -54,24 +42,19 @@ void main() {
     float speed = length(WarpMovement);
     if (speed > 0.001) {
         vec3 dir = WarpMovement / speed;
-        float alignment = dot(normalize(wrappedCenter), dir);
+        float alignment = dot(normalize(relativeCenter), dir);
         stretchOffset = WarpMovement * alignment * 0.3;
     }
 
-    vec3 finalPos = wrappedCenter + offset + stretchOffset;
+    vec3 finalPos = relativeCenter + offset + stretchOffset;
     gl_Position = ProjMat * ViewMat * WorldMat * vec4(finalPos, 1.0);
 
     mat3 rotWorldInv = transpose(mat3(WorldMat));
     localUpUniverseSpace = normalize(rotWorldInv * vec3(0,1,0));
     viewDir = distToCamera > 0.001 ? normalize(finalPos) : vec3(0, 0, 1);
 
-    // Brightness: always visible with a strong minimum
-    float proximityFade = 1.0 - smoothstep(BoxSize * 0.3, BoxSize * 0.5, distToCamera);
-    proximityFade = max(proximityFade, 0.2);
-
     vColor = Color;
     vColor *= (1.0 + speed / (1 + speed) * 5);
-    vColor *= proximityFade;
 
     uv = Normal.xy;
 }

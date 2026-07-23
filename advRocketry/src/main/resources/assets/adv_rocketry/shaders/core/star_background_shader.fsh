@@ -29,7 +29,7 @@ void main() {
     float relativeHeight = clamp((planetSkyHeight - playerHeight) / planetSkyHeight, 0, 1);
     float atmThickness = getAtmThickness(relativeHeight, U, V, LocalAtmDensity);
     // Gentle extinction so stars remain visible even through atmosphere
-    float atmFilter = exp(-atmThickness * 1.5);
+    float atmFilter = exp(-atmThickness * 0.3);
 
     vec4 color = vColor * alpha * atmFilter * BrightnessModifier;
     fragColor = color;

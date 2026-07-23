@@ -160,7 +160,9 @@ public class EntityRocket extends Entity implements INetworkTagReceiver {
         Player player = ClientUtils.getSinglePlayer();
         if (player != null && player.getVehicle() instanceof EntityRocket rocket) {
             if (Minecraft.getInstance().options.keyUse.isDown()) {
-                rocket.openGui();
+                if (player.isSecondaryUseActive()) {
+                    rocket.openGui();
+                }
                 Minecraft.getInstance().options.keyUse.consumeClick();
             }
         }
@@ -297,7 +299,13 @@ public class EntityRocket extends Entity implements INetworkTagReceiver {
 
     @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
-        openGui();
+        if (player.isSecondaryUseActive()) {
+            openGui();
+            return InteractionResult.SUCCESS_NO_ITEM_USED;
+        }
+        if (!level().isClientSide) {
+            player.startRiding(this);
+        }
         return InteractionResult.SUCCESS_NO_ITEM_USED;
     }
 

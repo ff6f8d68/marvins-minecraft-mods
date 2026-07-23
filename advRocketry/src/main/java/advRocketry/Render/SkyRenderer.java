@@ -107,6 +107,7 @@ public class SkyRenderer {
         shader.apply();
         vertexBufferPlanet.bind();
         vertexBufferPlanet.draw();
+        VertexBuffer.unbind();
         shader.clear();
         TRANSLUCENT_TRANSPARENCY.clearRenderState();
         GlStateManager._depthMask(true);
@@ -140,6 +141,11 @@ public class SkyRenderer {
             } else if (texPath.contains("procedural_")) {
                 int planetType = extractPlanetTypeFromPath(texPath);
                 ProceduralPlanetTextureGenerator.generateAndRegister(texLocation, planetType, seed);
+            } else {
+                // Fallback: generate procedural texture for non-procedural paths that don't exist
+                // This handles cases where static texture files are missing
+                int planetType = extractPlanetTypeFromPath(texPath);
+                ProceduralPlanetTextureGenerator.generateAndRegister(texLocation, planetType, seed);
             }
         }
 
@@ -171,8 +177,10 @@ public class SkyRenderer {
         shader.getUniform("CloudWarp").set(Config.INSTANCE.planet_Cloud_Noise_Warp ? 1 : 0);
         shader.getUniform("CloudSampleSteps").set(Config.INSTANCE.planet_Cloud_Noise_Samples);
 
-        shader.getUniform("TargetTextureTintColor").set(planetDimension.getReflectiveTextureTintColor());
-        shader.getUniform("TargetEmissiveTextureColor").set(planetDimension.getEmissiveTextureTintColor());
+        Vector3f textureTint = planetDimension.getReflectiveTextureTintColor();
+        Vector3f emissiveColor = planetDimension.getEmissiveTextureTintColor();
+        shader.getUniform("TargetTextureTintColor").set(textureTint);
+        shader.getUniform("TargetEmissiveTextureColor").set(emissiveColor);
 
         shader.getUniform("BrightnessMultiplier").set(brightnessModifider);
 
@@ -250,6 +258,15 @@ public class SkyRenderer {
                 }
             }
         }
+
+        // Final fallback: add a default light source for space map rendering when no lights found
+        // This ensures planets are visible even when no specific star light is found
+        if (totalLights == 0 && myAtmDensity == 0 && !isMyDimension) {
+            shader.getUniform("LightVectors[" + totalLights + "]").set(1.0f, 0.5f, 1.0f);
+            shader.getUniform("LightColors[" + totalLights + "]").set(1.0f, 1.0f, 1.0f, 1.0f);
+            totalLights += 1;
+        }
+
         shader.getUniform("LightCount").set(totalLights);
 
         if (isMyDimension) {
@@ -258,10 +275,20 @@ public class SkyRenderer {
             shader.getUniform("isLocalPlanet").set(0);
         }
 
+        NO_CULL.setupRenderState();
+        NO_DEPTH_TEST.setupRenderState();
         shader.apply();
-        vertexBufferPlanet.bind();
-        vertexBufferPlanet.draw();
+
+        if (vertexBufferPlanet != null) {
+            vertexBufferPlanet.bind();
+            vertexBufferPlanet.draw();
+            VertexBuffer.unbind();
+        } else {
+            System.err.println("vertexBufferPlanet is null, cannot render planet");
+        }
         shader.clear();
+        NO_DEPTH_TEST.clearRenderState();
+        NO_CULL.clearRenderState();
 
         if(targetAtmDensity > 0 && !isMyDimension)
             renderPlanetAtmosphere(
@@ -386,6 +413,7 @@ public class SkyRenderer {
         shader.apply();
         vertexBufferRingSystem.bind();
         vertexBufferRingSystem.draw();
+        VertexBuffer.unbind();
         shader.clear();
 
         TRANSLUCENT_TRANSPARENCY.clearRenderState();
@@ -567,8 +595,8 @@ public class SkyRenderer {
 
     private void setupRenderTargets() {
         PlanetsAndStarsTarget = new HDRTextureTarget(1000, 1000, true, false);
-        AtmosphereTarget = new HDRTextureTarget(1000, 1000, true, false);
-        PlanetsStarsAndAtmosphereTarget = new HDRTextureTarget(1000, 1000, true, false);
+        AtmosphereTarget = new HDRTextureTarget(1000, 1000, false, false);
+        PlanetsStarsAndAtmosphereTarget = new HDRTextureTarget(1000, 1000, false, false);
         bloomExtractBrightTarget = new HDRTextureTarget(1000, 1000, false, false);
         bloomBlurHorizontal = new HDRTextureTarget(1000, 1000, false, false);
         bloomBlurVertical = new HDRTextureTarget(1000, 1000, false, false);
@@ -600,10 +628,12 @@ public class SkyRenderer {
             shader.getUniform("intensity").set((float) Math.pow((spaceStation.getMovement().length() - 0.0001) / Config.INSTANCE.station_SpaceTravel_AU_Per_Second * 20 * 5, 0.5));
 
             shader.apply();
+            NO_CULL.setupRenderState();
             vertexBufferSkyBox.bind();
             vertexBufferSkyBox.draw();
-            shader.clear();
             VertexBuffer.unbind();
+            shader.clear();
+            NO_CULL.clearRenderState();
         }
     }
 
@@ -654,10 +684,12 @@ public class SkyRenderer {
         shader.getUniform("AtmDensity").set(myCurrentSpaceObject.getAtmosphereDensity());
 
         shader.apply();
+        NO_CULL.setupRenderState();
         vertexBufferSkyBox.bind();
         vertexBufferSkyBox.draw();
-        shader.clear();
         VertexBuffer.unbind();
+        shader.clear();
+        NO_CULL.clearRenderState();
     }
 
     private void renderSpaceBodies(Matrix4f proj, Matrix4f viewMatrix, Matrix4f worldMatrix, float partialtick) {
@@ -711,6 +743,7 @@ public class SkyRenderer {
             shader.apply();
             vertexBufferStarBackground.bind();
             vertexBufferStarBackground.draw();
+            VertexBuffer.unbind();
             shader.clear();
             ADDITIVE_TRANSPARENCY.clearRenderState();
             GlStateManager._enableDepthTest();
@@ -900,6 +933,7 @@ public class SkyRenderer {
         ShaderInstance shader;
 
         GlStateManager._depthMask(false);
+        GlStateManager._disableCull();
 
         vertexBufferSquare.bind();
 
@@ -962,6 +996,7 @@ public class SkyRenderer {
 
         // clear states
         VertexBuffer.unbind();
+        GlStateManager._enableCull();
         GlStateManager._depthMask(true);
     }
 
@@ -986,21 +1021,31 @@ public class SkyRenderer {
         int windowHeight = Minecraft.getInstance().getWindow().getScreenHeight();
 
         adjustRenderTargetSize(PlanetsAndStarsTarget, windowWidth, windowHeight, 1f);
-        adjustRenderTargetSize(AtmosphereTarget, windowWidth, windowHeight, 0.25f);
+        adjustRenderTargetSize(AtmosphereTarget, windowWidth, windowHeight, 1f);
         adjustRenderTargetSize(PlanetsStarsAndAtmosphereTarget, windowWidth, windowHeight, 1f);
+        adjustRenderTargetSize(bloomExtractBrightTarget, windowWidth, windowHeight, 0.5f);
+        adjustRenderTargetSize(bloomBlurHorizontal, windowWidth, windowHeight, 0.5f);
+        adjustRenderTargetSize(bloomBlurVertical, windowWidth, windowHeight, 0.5f);
 
         RenderSystem.clearColor(0.0f, 0.0f, 0.0f, 1f);
 
-        // render atmosphere first (disabled by default via config to test NASA stars)
+        // always clear atmosphere target so blit_add never reads stale/undefined data
+        AtmosphereTarget.bindWrite(true);
+        RenderSystem.clear(GL30.GL_COLOR_BUFFER_BIT | GL30.GL_DEPTH_BUFFER_BIT, false);
+
+        // render atmosphere (disabled by default via config to test NASA stars)
         if (Config.INSTANCE.enable_Sky_Background) {
-            AtmosphereTarget.bindWrite(true);
-            RenderSystem.clear(GL30.GL_COLOR_BUFFER_BIT | GL30.GL_DEPTH_BUFFER_BIT, false);
+            // Strip translation from view matrix so the atmosphere sphere stays centered on camera.
+            // Without this, camera position shifts the sphere, causing it to not cover the full viewport.
+            Matrix4f skyView = new Matrix4f(view);
+            skyView.set(0, 3, 0);
+            skyView.set(1, 3, 0);
+            skyView.set(2, 3, 0);
+
             if (myCurrentSpaceObject instanceof PlanetDimension)
-                // only planets need atm shader
-                renderSkyBox(proj, view, worldMatrix, partialtick);
+                renderSkyBox(proj, skyView, worldMatrix, partialtick);
             if (myCurrentSpaceObject instanceof SpaceStationDimension)
-                // space station has now atm, but maybe warp travel effects
-                renderWarpTravelBox(proj, view, worldMatrix, partialtick);
+                renderWarpTravelBox(proj, skyView, worldMatrix, partialtick);
         }
 
         // now render the planets and stars
